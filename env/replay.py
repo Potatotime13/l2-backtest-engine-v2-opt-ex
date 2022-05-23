@@ -15,7 +15,7 @@ import random
 random.seed(42)
 import time
 
-SOURCE_DIRECTORY = "/home/jovyan/_shared_storage/read_only/efn2_backtesting"
+SOURCE_DIRECTORY = "C:/Users/Lucas/Downloads/archive/_shared_storage/read_only/efn2_backtesting"
 DATETIME = "TIMESTAMP_UTC"
 
 class Episode:
@@ -537,7 +537,7 @@ class Backtest:
         episode_start_buffer:str,
         episode_start:str,
         episode_end:str,
-        display_interval:int=100,
+        display_interval:int=1000000,
     ):  
         """
         Run agent against a single backtest instance based on a specified 

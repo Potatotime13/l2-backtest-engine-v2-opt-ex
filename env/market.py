@@ -663,7 +663,7 @@ class Order:
 
     history = list() # instance store
 
-    def __init__(self, timestamp, market_id, side, quantity, limit=None):
+    def __init__(self, timestamp, market_id, side, quantity, limit=None, parent=None):
         """
         Instantiate order.
 
@@ -686,6 +686,8 @@ class Order:
             int, number of shares ordered
         :param limit:
             float, limit price to consider, optional
+        :param parent:
+            obj, corresponding parent order, optional
         """
 
         # static attributes from arguments
@@ -695,6 +697,9 @@ class Order:
         self.quantity = quantity
         self.limit = limit
         self.order_id = len(self.__class__.history)
+
+        ### PROJECT CHANGE: knowledge of corresponding parent order
+        self.parent = parent
 
         # dynamic attributes
         self.quantity_left = quantity
@@ -779,6 +784,10 @@ class Order:
         # execute order (partially)
         trade = Trade(timestamp, self.market_id, self.side, quantity, price)
         self.related_trades.append(trade)
+
+        # PROJECT CHANGE: execution message to parent order
+        if not self.parent is None:
+            self.parent.execution(trade)
 
         # update remaining quantity
         self.quantity_left -= quantity

@@ -139,7 +139,8 @@ class MarketInterface:
 
     # order management ---
 
-    def submit_order(self, market_id, side, quantity, limit=None):
+    # PROJECT CHANGES: pass parent object to order
+    def submit_order(self, market_id, side, quantity, limit=None, parent=None):
         """
         Submit market order, limit order if limit is specified.
 
@@ -154,6 +155,8 @@ class MarketInterface:
             int, number of shares ordered
         :param limit:
             float, limit price to consider, optional
+        :param parent:
+            obj, corresponding parent order, optional
         :return order:
             Order, order instance
         """
@@ -165,6 +168,7 @@ class MarketInterface:
             side=side,
             quantity=quantity,
             limit=limit,
+            parent=parent,
         )
 
         return order

@@ -11,8 +11,8 @@ import pandas as pd
 class SimpleAgent(BaseAgent):
 
     def __init__(self, name: str,barrier_open: float,
-                 barrier_close: float, stop_loss: float, quantity: int,
-                 ):
+                    barrier_close: float, stop_loss: float, quantity: int,
+                    ):
         """
         Trading agent implementation example. Improved version.
 
@@ -77,14 +77,14 @@ class SimpleAgent(BaseAgent):
             drawdown = min((book_state['L1-AskPrice']/
                             self.max_price[market_id] - 1), 0)
             upswing = max((book_state['L1-BidPrice']/
-                           self.min_price[market_id] - 1), 0)
+                            self.min_price[market_id] - 1), 0)
 
             # Conditions for opening a position
             # (1) no position is open
             # (2) no order is waiting for execution
             if not self.market_interface.exposure[market_id] and \
-               not self.market_interface.get_filtered_orders(
-                   market_id, status="ACTIVE"):
+                not self.market_interface.get_filtered_orders(
+                    market_id, status="ACTIVE"):
 
                 # Submit market buy order if drawdown exceeds barrier
                 if abs(drawdown) > self.barrier_open:
@@ -144,18 +144,18 @@ class SimpleAgent(BaseAgent):
 
     def on_time(self, timestamp: pd.Timestamp, timestamp_next: pd.Timestamp):
         """
-         This method is called with every iteration and provides the timestamps
-         for both current and next iteration. The given interval may be used to
-         submit orders before a specific point in time.
+        This method is called with every iteration and provides the timestamps
+        for both current and next iteration. The given interval may be used to
+        submit orders before a specific point in time.
 
-         :param timestamp:
-             pd.Timestamp, timestamp recorded
-         :param timestamp_next:
-             pd.Timestamp, timestamp recorded in next iteration
-         """
+        :param timestamp:
+            pd.Timestamp, timestamp recorded
+        :param timestamp_next:
+            pd.Timestamp, timestamp recorded in next iteration
+        """
 
         trading_time = timestamp.time() > self.start_time and \
-                       timestamp.time() < self.end_time
+                        timestamp.time() < self.end_time
 
         # Enter trading phase if
         # (1) current time in defined trading_time
@@ -173,8 +173,7 @@ class SimpleAgent(BaseAgent):
 
                 # cancel active orders for this market
                 [self.market_interface.cancel_order(order) for order in
-                 self.market_interface.get_filtered_orders(market_id,
-                                                           status="ACTIVE")]
+                self.market_interface.get_filtered_orders(market_id, status="ACTIVE")]
 
                 # close positions for this market
                 if self.market_interface.exposure[market_id] > 0:
@@ -190,26 +189,26 @@ class SimpleAgent(BaseAgent):
 if __name__ == "__main__":
 
     identifier_list = [
-       # ADIDAS
-       "Adidas.BOOK", "Adidas.TRADES",
-       # ALLIANZ
-       "Allianz.BOOK", "Allianz.TRADES",
-       # BASF
-       "BASF.BOOK", "BASF.TRADES",
-       # Bayer
-       "Bayer.BOOK", "Bayer.TRADES",
-       # BMW
-       "BMW.BOOK", "BMW.TRADES",
-       # Continental
-       "Continental.BOOK", "Continental.TRADES",
-       # Covestro
-       "Covestro.BOOK", "Covestro.TRADES",
-       # Daimler
-       "Daimler.BOOK", "Daimler.TRADES",
-       # Deutsche Bank
-       "DeutscheBank.BOOK", "DeutscheBank.TRADES",
-       # DeutscheBörse
-       "DeutscheBörse.BOOK", "DeutscheBörse.TRADES",
+        # ADIDAS
+        "Adidas.BOOK", "Adidas.TRADES",
+        # ALLIANZ
+        "Allianz.BOOK", "Allianz.TRADES",
+        # BASF
+        "BASF.BOOK", "BASF.TRADES",
+        # Bayer
+        "Bayer.BOOK", "Bayer.TRADES",
+        # BMW
+        "BMW.BOOK", "BMW.TRADES",
+        # Continental
+        "Continental.BOOK", "Continental.TRADES",
+        # Covestro
+        "Covestro.BOOK", "Covestro.TRADES",
+        # Daimler
+        "Daimler.BOOK", "Daimler.TRADES",
+        # Deutsche Bank
+        "DeutscheBank.BOOK", "DeutscheBank.TRADES",
+        # DeutscheBörse
+        "DeutscheBörse.BOOK", "DeutscheBörse.TRADES",
     ]
 
     agent = SimpleAgent(
