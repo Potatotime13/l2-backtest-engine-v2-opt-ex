@@ -4,12 +4,26 @@ import pandas as pd
 from env.market import Trade
 
 class Parent_order():
+    '''
+    This is the Parent Order class wich is used to simulate incoming parent orders 
+    and manege corresponding child orders
+    '''
     def __init__(self, ts:pd.Timestamp, volume_range:list, stock:str, avg_vol:float, time_window_length:int, agent) -> None:
         '''
-        incoming order defined by its input parameters
-        volume_range : percentage of daily volume
-        stock_list : stocks which can be ordered
-        time_window_length : time in hours
+        initializiation of an Parent order object
+
+        :param ts:
+            pd.Timestamp, timestamp of the moment the initialization is called
+        :param volume_range:
+            list, containing percentual values of daily volume representing the interval from which the order size is sampled
+        :param stock:
+            string, stock symbol of the stock ordered
+        :param avg_vol:
+            float, average volume trade volume of the stock
+        :param time_window_length:
+            int, time in which the order should be filled in houres
+        :param agent:
+            agent, agent object
         '''
         self.MARKET_END = pd.Timestamp(ts.year, ts.month, ts.day, 16, 30)
         self.NEXT_MARKET_START = pd.Timestamp(ts.year, ts.month, ts.day+1, 8)
@@ -38,6 +52,12 @@ class Parent_order():
         print(self.volume,self.symbol,self.market_side,self.time_window[0])
     
     def execution(self, exec_trade:Trade):
+        '''
+        method which is called when a child order is (partly) executed to track the current standing of the parent order
+
+        :param exec_trade:
+            Trade, trade object representing the trade who triggerd the method
+        '''
         volume_old = self.volume-self.volume_left
         self.volume_left -= exec_trade.quantity
         if self.volume_left <= 0:
@@ -48,10 +68,20 @@ class Parent_order():
             self.vwap = exec_trade.price
         else:
             self.vwap =  (volume_old * self.vwap + exec_trade.quantity * exec_trade.price) / (volume_old+exec_trade.quantity)
-        if not self.market_vwap is None:        
-            print(self.symbol,' standing : ',self.vwap/self.market_vwap)
+        if not self.market_vwap is None:
+            if self.market_side == 'sell':
+                print(self.symbol,' standing : ',self.vwap/self.market_vwap)
+            else:
+                print(self.symbol,' standing : ',self.market_vwap/self.vwap)
 
     def actualize_vwap(self, trades_state:pd.Series):
+        '''
+        method to track the market vwap in the same time window as the parent order
+
+        :param trades_state:
+            pd.Series, pandas series containing the latest trade history
+            format: TIMESTAMP_UTC :pd.Timestamp, Price :[float], Volume :[float]
+        '''
         trade_volume = np.sum(trades_state['Volume'])        
         trade_vwap = np.sum(np.array(trades_state['Price']) * np.array(trades_state['Volume'])) / trade_volume
         if self.market_vwap is None:
@@ -61,7 +91,13 @@ class Parent_order():
             self.market_vwap = (self.market_volume * self.market_vwap + trade_volume * trade_vwap) / (self.market_volume+trade_volume)
             self.market_volume += trade_volume
 
-    def reduce_schedule(self, reduce_volume):
+    def reduce_schedule(self, reduce_volume:float):
+        '''
+        method to actualize the schedule after an order was executed
+
+        :param reduce_volume:
+            float, number of shares traded
+        '''
         for index, vol in self.schedule['volume'].iteritems():
             if 0 < vol <= reduce_volume:
                 reduce_volume -= vol

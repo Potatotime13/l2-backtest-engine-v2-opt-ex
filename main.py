@@ -7,10 +7,11 @@ from agent.parent_order import Parent_order
 
 import numpy as np
 import pandas as pd
+import re
 
 class Agent(BaseAgent):
 
-    def __init__(self, name, *args, **kwargs):
+    def __init__(self, name, identifier_list, *args, **kwargs):
         """
         Trading agent implementation.
 
@@ -58,11 +59,18 @@ class Agent(BaseAgent):
         """
         super(Agent, self).__init__(name, *args, **kwargs)
 
+        # extract stock list out of identifier list
+        self.stock_list = []
+        for val in identifier_list:
+            stock = re.split(r'\.(?!\d)', val)[0]
+            if len(self.stock_list) == 0 or self.stock_list[-1] != stock: 
+                self.stock_list.append(stock)
+
         self.Orders_to_market = []
         self.order_vol_hist = []
         self.stock_hourly_vol = pd.read_csv('./agent/resources/daily_volume.csv').set_index('Unnamed: 0')
-        self.stock_mean_vol = self.stock_hourly_vol.mean()
-        self.parent_orders = {stock:[] for stock in self.stock_mean_vol.index}
+        self.stock_mean_vol = self.stock_hourly_vol.mean()[self.stock_list]
+        self.parent_orders = {stock:[] for stock in self.stock_list}
         self.orders_initialized = False
         self.check_status = None        
 
@@ -96,7 +104,6 @@ class Agent(BaseAgent):
         """
 
         # calculate vwap for active orders
-        # TODO idea store order object as dict with market id
         if self.parent_orders[market_id][-1].active:
             self.parent_orders[market_id][-1].actualize_vwap(trades_state)
 
@@ -121,16 +128,21 @@ class Agent(BaseAgent):
             self.orders_initialized = True
 
         # check every minute if orders are outdated
-        # check if they are in their schedule
-        if self.check_status == None:
-            self.check_status = timestamp
-        elif self.check_status + pd.DateOffset(minutes=1) < timestamp:
+        # check if they are in their schedule         
+        if self.check_status == None or self.check_status + pd.DateOffset(minutes=1) < timestamp:
             self.check_status = timestamp
             print(timestamp)
             self.set_parent_order_status(timestamp)
             self.stay_scheduled(timestamp)
 
-    def set_parent_order_status(self, timestamp):
+    def set_parent_order_status(self, timestamp:pd.Timestamp):
+        '''
+        method to check at a moment in time if orders are active depending on their time_window
+
+        :params timestamp:
+            pd.Timestamp, timestamp of the moment the method is called
+        '''
+        # TODO check for volume_left
         for stock in self.parent_orders:
             if self.parent_orders[stock][-1].active == False and self.parent_orders[stock][-1].time_window[0] < timestamp:
                 self.parent_orders[stock][-1].active = True
@@ -140,7 +152,10 @@ class Agent(BaseAgent):
 
     def set_schedule(self, parent_order:Parent_order):
         '''
-        defines a time schedule per parent order
+        mehtod that defines a time schedule per parent order which is called by the order itself
+
+        :params parent_order:
+            Parent_order, object of the parent order which asks for a schedule
         '''
         # generate timestamps
         # account for across day time windows
@@ -169,11 +184,13 @@ class Agent(BaseAgent):
             volumes[np.arange(len(time_stamps)+vol_left,len(time_stamps))] -= 1
         parent_order.schedule = pd.concat([parent_order.schedule, pd.DataFrame({'timestamp':time_stamps,'volume':volumes.tolist()})])
 
-
-    def update_schedule(self, parent_order):
-        pass
-
     def stay_scheduled(self, timestamp:pd.Timestamp):
+        '''
+        method to send market orders to stay on the planed schedule
+
+        :params timestamp:
+            pd.Timestamp, moment of method call usually called out of on_time
+        '''
         for stock in self.parent_orders:
             if self.parent_orders[stock][-1].active:
                 orders_to_fill = self.parent_orders[stock][-1].schedule[self.parent_orders[stock][-1].schedule['timestamp']<timestamp]
@@ -186,7 +203,17 @@ class Agent(BaseAgent):
                                                     ))
 
     def update_limit_order(self, timestamp, market_status):
+        '''
+        method to send limit orders to the market, dependend on the agent strategy
+        '''
         pass
+
+    def update_schedule(self, parent_order):
+        '''
+        method that allows more flexible scheduling, like front and back loading
+        '''
+        pass
+
 
 if __name__ == "__main__":
 
@@ -220,6 +247,7 @@ if __name__ == "__main__":
 
     agent = Agent(
         name="test_agent",
+        identifier_list=identifier_list,
         # ...
     )
 
