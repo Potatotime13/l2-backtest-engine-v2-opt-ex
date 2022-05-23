@@ -622,7 +622,7 @@ class MarketState:
         for price, liquidity_list in state.items():
 
             # break matching algorithm when price is worse than limit
-            if order.limit and not better_than(order.price, order.limit):
+            if order.limit and not better_than(price, order.limit):
                 break
 
             # determine how much quantity can be used by agent order
