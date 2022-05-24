@@ -75,9 +75,10 @@ class Agent(BaseAgent):
         self.check_status = None        
 
         ### Params to set
-        self.vol_range = [0.05,0.07]
-        self.time_window = 1
-        self.child_window = 2
+        self.vol_range = [0.05,0.07]    # percent of daily vol
+        self.time_window = 1            # hours
+        self.child_window = 2           # minutes
+        self.volume_pattern = [1]       # volume distribution
 
     def on_quote(self, market_id:str, book_state:pd.Series):
         """
@@ -124,7 +125,7 @@ class Agent(BaseAgent):
         if not self.orders_initialized:
             print('create parent orders')
             for stock in self.parent_orders:
-                self.parent_orders[stock].append(Parent_order(timestamp, self.vol_range, stock, self.stock_mean_vol[stock], self.time_window, self))
+                self.parent_orders[stock].append(Parent_order(timestamp, self.vol_range, stock, self.stock_mean_vol[stock], self.time_window, self, self.child_window, self.volume_pattern))
             self.orders_initialized = True
 
         # check every minute if orders are outdated
@@ -148,41 +149,7 @@ class Agent(BaseAgent):
                 self.parent_orders[stock][-1].active = True
             elif self.parent_orders[stock][-1].time_window[1] < timestamp:
                 self.parent_orders[stock][-1].active = False # generate new parent order
-                self.parent_orders[stock].append(Parent_order(timestamp, self.vol_range, stock, self.stock_mean_vol[stock], self.time_window, self))
-
-    def set_schedule(self, parent_order:Parent_order):
-        '''
-        mehtod that defines a time schedule per parent order which is called by the order itself
-
-        :params parent_order:
-            Parent_order, object of the parent order which asks for a schedule
-        '''
-        # generate timestamps
-        # account for across day time windows
-        time_stamps = []
-        time_unreached = True
-        count = 1
-        start_time = parent_order.time_window[0]
-
-        while time_unreached:
-            if start_time + pd.DateOffset(minutes=self.child_window * count) < parent_order.MARKET_END:
-                offset_time = start_time + pd.DateOffset(minutes=self.child_window * count)
-            else:
-                offset_time = parent_order.NEXT_MARKET_START + ((start_time + pd.DateOffset(minutes=self.child_window * count)) - parent_order.MARKET_END)
-            if   offset_time > parent_order.time_window[1]:
-                time_unreached = False
-            else:
-                time_stamps.append(offset_time)
-            count += 1
-
-        # calculate volumes
-        volumes = np.ones((len(time_stamps))) * max(parent_order.volume//len(time_stamps),1)
-        vol_left = int(parent_order.volume - np.sum(volumes))
-        if vol_left > 0:
-            volumes[np.arange(vol_left)] += 1
-        elif vol_left < 0:
-            volumes[np.arange(len(time_stamps)+vol_left,len(time_stamps))] -= 1
-        parent_order.schedule = pd.concat([parent_order.schedule, pd.DataFrame({'timestamp':time_stamps,'volume':volumes.tolist()})])
+                self.parent_orders[stock].append(Parent_order(timestamp, self.vol_range, stock, self.stock_mean_vol[stock], self.time_window, self, self.child_window, self.volume_pattern))
 
     def stay_scheduled(self, timestamp:pd.Timestamp):
         '''
@@ -192,15 +159,7 @@ class Agent(BaseAgent):
             pd.Timestamp, moment of method call usually called out of on_time
         '''
         for stock in self.parent_orders:
-            if self.parent_orders[stock][-1].active:
-                orders_to_fill = self.parent_orders[stock][-1].schedule[self.parent_orders[stock][-1].schedule['timestamp']<timestamp]
-                if orders_to_fill['volume'].sum() > 0:
-                    self.parent_orders[stock][-1].child_orders.append(self.market_interface.submit_order(
-                                                    stock, 
-                                                    self.parent_orders[stock][-1].market_side, 
-                                                    int(orders_to_fill['volume'].sum()),
-                                                    parent=self.parent_orders[stock][-1]
-                                                    ))
+            self.parent_orders[stock][-1].schedule.stay_scheduled(timestamp)
 
     def update_limit_order(self, timestamp, market_status):
         '''
