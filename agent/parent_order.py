@@ -89,6 +89,13 @@ class Schedule():
             elif vol > reduce_volume:
                 self.scheduling.loc[index,'volume'] -= reduce_volume
                 reduce_volume = 0
+    
+    def get_outstanding(self, timestamp) -> float:
+        if self.scheduling[self.scheduling['timestamp']<timestamp].index.empty:
+            ind = 0
+        else:
+            ind = max(self.scheduling[self.scheduling['timestamp']<timestamp].index)+1
+        return self.scheduling.loc[:ind,'volume'].sum()
 
 class Parent_order():
     '''
@@ -123,7 +130,7 @@ class Parent_order():
         self.volume = int(volume_range[0] + rn.random() * (volume_range[1]-volume_range[0]) * avg_vol)
 
         ### WARNING static start at 8:xx for testing
-        start_h = 8 #rn.randint(8, self.MARKET_END.hour-1)
+        start_h = max(8,ts.hour) #rn.randint(8, self.MARKET_END.hour-1)
         start_m = rn.randint(15,59)
         ############################################
 

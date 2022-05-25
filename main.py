@@ -1,13 +1,16 @@
 # !/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from turtle import update
 from agent.agent import BaseAgent
+from env.market import Order
 from env.replay import Backtest
 from agent.parent_order import Parent_order
 
 import numpy as np
 import pandas as pd
 import re
+from typing import List
 
 class Agent(BaseAgent):
 
@@ -89,10 +92,9 @@ class Agent(BaseAgent):
         :param book_state:
             pd.Series, including timestamp, bid/ask price/quantity for 10 levels
         """
-
-        # TODO: YOUR IMPLEMENTATION GOES HERE
-        
-        pass
+        if self.orders_initialized:
+            if self.parent_orders[market_id][-1].active:
+                self.update_limit_order(market_id, book_state['TIMESTAMP_UTC'], book_state)
 
     def on_trade(self, market_id:str, trades_state:pd.Series):
         """
@@ -143,12 +145,11 @@ class Agent(BaseAgent):
         :params timestamp:
             pd.Timestamp, timestamp of the moment the method is called
         '''
-        # TODO check for volume_left
         for stock in self.parent_orders:
-            if self.parent_orders[stock][-1].active == False and self.parent_orders[stock][-1].time_window[0] < timestamp:
+            if self.parent_orders[stock][-1].active == False and self.parent_orders[stock][-1].time_window[0] < timestamp and self.parent_orders[stock][-1].volume_left > 0:
                 self.parent_orders[stock][-1].active = True
             elif self.parent_orders[stock][-1].time_window[1] < timestamp:
-                self.parent_orders[stock][-1].active = False # generate new parent order
+                self.parent_orders[stock][-1].active = False
                 self.parent_orders[stock].append(Parent_order(timestamp, self.vol_range, stock, self.stock_mean_vol[stock], self.time_window, self, self.child_window, self.volume_pattern))
 
     def stay_scheduled(self, timestamp:pd.Timestamp):
@@ -160,11 +161,55 @@ class Agent(BaseAgent):
         '''
         for stock in self.parent_orders:
             self.parent_orders[stock][-1].schedule.stay_scheduled(timestamp)
+    
+    def update_needed(self, market_state, order:Order, timestamp):
+        trigger = False
+        level = '1'
+        side = 'Bid' if order.side == 'buy' else 'Ask'
+        if  market_state['L'+level+'-'+side+'Price'] != order.limit and order.parent.schedule.get_outstanding(timestamp)>0:
+            trigger = True
 
-    def update_limit_order(self, timestamp, market_status):
+        return trigger
+
+    def determinate_price(self, market_state, order:Order):
+        level = '1'
+        side = 'Bid' if order.side == 'buy' else 'Ask'
+        return market_state['L'+level+'-'+side+'Price']
+
+    def update_limit_order(self, market_id, timestamp, market_state):
         '''
         method to send limit orders to the market, dependend on the agent strategy
         '''
+        orders = self.market_interface.get_filtered_orders(market_id, status="ACTIVE")
+        limit_order = False
+        for order in orders:
+            if not order.limit is None:
+                limit_order = True
+                if self.update_needed(market_state, order, timestamp):
+                    self.market_interface.cancel_order(order)
+                    order.parent.child_orders.append(self.market_interface.submit_order(
+                                market_id=market_id, 
+                                side=order.side, 
+                                quantity=order.parent.schedule.get_outstanding(timestamp),
+                                limit=self.determinate_price(market_state, order),
+                                parent=order.parent
+                                ))
+
+        if not limit_order:
+            parent_order = self.parent_orders[market_id][-1]
+            if parent_order.market_side == 'buy':
+                limit = market_state['L1-BidPrice']
+            else:
+                limit = market_state['L1-AskPrice']
+            parent_order.child_orders.append(self.market_interface.submit_order(
+                                    market_id=market_id, 
+                                    side=parent_order.market_side, 
+                                    quantity=parent_order.schedule.get_outstanding(timestamp),
+                                    limit=limit,
+                                    parent=parent_order
+                                    ))
+
+    def calculate_edge(self):
         pass
 
     def update_schedule(self, parent_order):
@@ -180,25 +225,25 @@ if __name__ == "__main__":
 
     identifier_list = [
         # ADIDAS
-        "Adidas.BOOK", "Adidas.TRADES",
+        #"Adidas.BOOK", "Adidas.TRADES",
         # ALLIANZ
-        "Allianz.BOOK", "Allianz.TRADES",
+        #"Allianz.BOOK", "Allianz.TRADES",
         # BASF
-        "BASF.BOOK", "BASF.TRADES",
+        #"BASF.BOOK", "BASF.TRADES",
         # Bayer
-        "Bayer.BOOK", "Bayer.TRADES",
+        #"Bayer.BOOK", "Bayer.TRADES",
         # BMW
-        "BMW.BOOK", "BMW.TRADES",
+        #"BMW.BOOK", "BMW.TRADES",
         # Continental
-        "Continental.BOOK", "Continental.TRADES",
+        #"Continental.BOOK", "Continental.TRADES",
         # Covestro
-        "Covestro.BOOK", "Covestro.TRADES",
+        #"Covestro.BOOK", "Covestro.TRADES",
         # Daimler
         "Daimler.BOOK", "Daimler.TRADES",
         # Deutsche Bank
-        "DeutscheBank.BOOK", "DeutscheBank.TRADES",
+        #"DeutscheBank.BOOK", "DeutscheBank.TRADES",
         # DeutscheBörse
-        "DeutscheBörse.BOOK", "DeutscheBörse.TRADES",
+        #"DeutscheBörse.BOOK", "DeutscheBörse.TRADES",
     ]
 
     # TODO: INSTANTIATE AGENT. Please refer to the corresponding file for more 
@@ -248,7 +293,7 @@ if __name__ == "__main__":
     # episode
     backtest.run_episode_list(identifier_list=identifier_list,
         episode_list=[
-            ("2021-01-04T08:00:00", "2021-01-04T08:15:00", "2021-01-04T08:45:00"),
+            ("2021-01-04T08:00:00", "2021-01-04T08:15:00", "2021-01-04T09:30:00"),
             # ... 
         ],
     )
