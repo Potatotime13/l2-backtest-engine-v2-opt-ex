@@ -1,7 +1,6 @@
 # !/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from turtle import update
 from agent.agent import BaseAgent
 from env.market import Order
 from env.replay import Backtest
@@ -10,7 +9,7 @@ from agent.parent_order import Parent_order
 import numpy as np
 import pandas as pd
 import re
-from typing import List
+from typing import List, Any, Callable, Optional, Type, Union, TypedDict
 
 class Agent(BaseAgent):
 
@@ -62,22 +61,23 @@ class Agent(BaseAgent):
         """
         super(Agent, self).__init__(name, *args, **kwargs)
 
-        # extract stock list out of identifier list
+        ### extract stock list out of identifier list
         self.stock_list = []
         for val in identifier_list:
             stock = re.split(r'\.(?!\d)', val)[0]
             if len(self.stock_list) == 0 or self.stock_list[-1] != stock: 
                 self.stock_list.append(stock)
 
-        self.Orders_to_market = []
-        self.order_vol_hist = []
+        # TODO move to decsission support
         self.stock_hourly_vol = pd.read_csv('./agent/resources/daily_volume.csv').set_index('Unnamed: 0')
         self.stock_mean_vol = self.stock_hourly_vol.mean()[self.stock_list]
+
+        ### variable parameter set
         self.parent_orders = {stock:[] for stock in self.stock_list}
         self.orders_initialized = False
         self.check_status = None        
 
-        ### Params to set
+        ### static parameter set
         self.vol_range = [0.05,0.07]    # percent of daily vol
         self.time_window = 1            # hours
         self.child_window = 2           # minutes
@@ -160,7 +160,14 @@ class Agent(BaseAgent):
             pd.Timestamp, moment of method call usually called out of on_time
         '''
         for stock in self.parent_orders:
-            self.parent_orders[stock][-1].schedule.stay_scheduled(timestamp)
+            market_order = self.parent_orders[stock][-1].schedule.stay_scheduled(timestamp)
+            if not market_order is None:
+                self.parent_orders[stock][-1].child_orders.append(self.market_interface.submit_order(
+                    market_id=market_order['symbol'],
+                    side=market_order['side'],
+                    quantity=market_order['quantity'],
+                    parent=market_order['parent'],
+                ))
     
     def update_needed(self, market_state, order:Order, timestamp):
         trigger = False
@@ -171,7 +178,7 @@ class Agent(BaseAgent):
 
         return trigger
 
-    def determinate_price(self, market_state, order:Order):
+    def determinate_price(self, market_state, order: Union[Order, Parent_order]):
         level = '1'
         side = 'Bid' if order.side == 'buy' else 'Ask'
         return market_state['L'+level+'-'+side+'Price']
@@ -197,20 +204,14 @@ class Agent(BaseAgent):
 
         if not limit_order:
             parent_order = self.parent_orders[market_id][-1]
-            if parent_order.market_side == 'buy':
-                limit = market_state['L1-BidPrice']
-            else:
-                limit = market_state['L1-AskPrice']
             parent_order.child_orders.append(self.market_interface.submit_order(
                                     market_id=market_id, 
-                                    side=parent_order.market_side, 
+                                    side=parent_order.side, 
                                     quantity=parent_order.schedule.get_outstanding(timestamp),
-                                    limit=limit,
+                                    limit=self.determinate_price(market_state, parent_order),
                                     parent=parent_order
                                     ))
 
-    def calculate_edge(self):
-        pass
 
     def update_schedule(self, parent_order):
         '''

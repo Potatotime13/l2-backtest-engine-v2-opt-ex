@@ -58,22 +58,24 @@ class Schedule():
             volumes[np.arange(len(time_stamps)+vol_left,len(time_stamps))] -= 1
         self.scheduling = pd.DataFrame({'timestamp':time_stamps,'volume':volumes.tolist()})
 
-    def stay_scheduled(self, timestamp:pd.Timestamp):
+    def stay_scheduled(self, timestamp:pd.Timestamp) -> dict:
         '''
         method to send market orders to stay on the planed schedule
 
         :params timestamp:
             pd.Timestamp, moment of method call usually called out of on_time
         '''
+        output = None
         if self.parent_order.active:
-            orders_to_fill = self.scheduling[self.scheduling['timestamp']<timestamp]
+            orders_to_fill = self.scheduling[self.scheduling['timestamp']<timestamp]            
             if orders_to_fill['volume'].sum() > 0:
-                self.parent_order.child_orders.append(self.parent_order.agent.market_interface.submit_order(
-                                                self.parent_order.symbol, 
-                                                self.parent_order.market_side, 
-                                                int(orders_to_fill['volume'].sum()),
-                                                parent=self.parent_order
-                                                ))
+                output = {
+                    'symbol': self.parent_order.symbol,
+                    'side': self.parent_order.side,
+                    'quantity': int(orders_to_fill['volume'].sum()),
+                    'parent': self.parent_order
+                }
+        return output
 
     def reduce_schedule(self, reduce_volume:float):
         '''
@@ -140,7 +142,7 @@ class Parent_order():
             self.time_window = [start_time, end_time]
         else:
             self.time_window = [start_time, pd.Timestamp(ts.year, ts.month, ts.day, start_h+time_window_length,start_m)]
-        self.market_side = rn.choice(['buy','sell'])
+        self.side = rn.choice(['buy','sell'])
         self.agent = agent        
         self.schedule = Schedule(self, child_window, pattern)
 
@@ -152,7 +154,7 @@ class Parent_order():
         self.market_vwap = None
         self.market_volume = None
 
-        print(self.volume,self.symbol,self.market_side,self.time_window[0])
+        print(self.volume,self.symbol,self.side,self.time_window[0])
     
     def execution(self, exec_trade:Trade):
         '''
@@ -174,7 +176,7 @@ class Parent_order():
         else:
             self.vwap =  (volume_old * self.vwap + exec_trade.quantity * exec_trade.price) / (volume_old+exec_trade.quantity)
         if not self.market_vwap is None:
-            if self.market_side == 'sell':
+            if self.side == 'sell':
                 print(self.symbol,' standing : ',self.vwap/self.market_vwap)
             else:
                 print(self.symbol,' standing : ',self.market_vwap/self.vwap)
