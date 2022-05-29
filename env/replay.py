@@ -8,17 +8,15 @@ from env.market import MarketState, Order, Trade
 import copy
 import datetime
 import logging
-logging.basicConfig(level=logging.CRITICAL)  # logging.basicConfig(level=logging.NOTSET)
+logging.basicConfig(level=logging.CRITICAL) # logging.basicConfig(level=logging.NOTSET)
 import os
 import pandas as pd
 import random
 random.seed(42)
 import time
 
-SOURCE_DIRECTORY = "/Users/markusdiebels/Documents/Schreibtisch/Studium/" \
-                   "Studium WiInfo/SoSe 2022/AHFT/Daten/efn2_backtesting"
+SOURCE_DIRECTORY = "/Users/markusdiebels/Documents/Schreibtisch/Studium/Studium WiInfo/SoSe 2022/AHFT/Daten/efn2_backtesting"
 DATETIME = "TIMESTAMP_UTC"
-
 
 class Episode:
 

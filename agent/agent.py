@@ -10,7 +10,6 @@ import abc
 import pandas as pd
 import textwrap
 
-
 class BaseAgent(abc.ABC):
 
     def __init__(self, name):

@@ -9,10 +9,9 @@ import copy
 import numpy as np
 import pandas as pd
 
-
 class MarketState:
 
-    instances = dict()  # instance store
+    instances = dict() # instance store
 
     def __init__(self, market_id):
         """
