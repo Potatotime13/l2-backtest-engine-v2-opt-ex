@@ -1,15 +1,16 @@
 # !/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from agent.agent import BaseAgent
-from env.market import Order
-from env.replay import Backtest
-from agent.parent_order import Parent_order
-
-import numpy as np
+# general imports
 import pandas as pd
 import re
-from typing import List, Any, Callable, Optional, Type, Union, TypedDict
+
+# project imports
+from agent.agent import BaseAgent
+from env.replay import Backtest
+from agent.decission_support import Decission_support
+from agent.order_management import Order_Management_System
+
 
 class Agent(BaseAgent):
 
@@ -68,20 +69,17 @@ class Agent(BaseAgent):
             if len(self.stock_list) == 0 or self.stock_list[-1] != stock: 
                 self.stock_list.append(stock)
 
-        # TODO move to decsission support
-        self.stock_hourly_vol = pd.read_csv('./agent/resources/daily_volume.csv').set_index('Unnamed: 0')
-        self.stock_mean_vol = self.stock_hourly_vol.mean()[self.stock_list]
+        # Decsission support
+        self.support = Decission_support(self.stock_list,None)
 
         ### variable parameter set
-        self.parent_orders = {stock:[] for stock in self.stock_list}
-        self.orders_initialized = False
+        self.order_management = Order_Management_System(self.stock_list, self)
         self.check_status = None        
 
         ### static parameter set
         self.vol_range = [0.05,0.07]    # percent of daily vol
         self.time_window = 1            # hours
-        self.child_window = 2           # minutes
-        self.volume_pattern = [1]       # volume distribution
+        self.child_window = 2           # minutes TODO: maybe dynamic per stock
 
     def on_quote(self, market_id:str, book_state:pd.Series):
         """
@@ -92,8 +90,8 @@ class Agent(BaseAgent):
         :param book_state:
             pd.Series, including timestamp, bid/ask price/quantity for 10 levels
         """
-        if self.orders_initialized:
-            if self.parent_orders[market_id][-1].active:
+        if self.order_management.initialized:
+            if self.order_management.get_recent_parent_order(market_id).active:
                 self.update_limit_order(market_id, book_state['TIMESTAMP_UTC'], book_state)
 
     def on_trade(self, market_id:str, trades_state:pd.Series):
@@ -106,9 +104,8 @@ class Agent(BaseAgent):
             pd.Series: TIMESTAMP_UTC :pd.Timestamp, Price :[float], Volume :[float]
         """
 
-        # calculate vwap for active orders
-        if self.parent_orders[market_id][-1].active:
-            self.parent_orders[market_id][-1].actualize_vwap(trades_state)
+        # calculate vwap for active order
+        self.order_management.update_vwap(market_id, trades_state)
 
 
     def on_time(self, timestamp:pd.Timestamp, timestamp_next:pd.Timestamp):
@@ -124,64 +121,25 @@ class Agent(BaseAgent):
         """
 
         # Produce parent orders at the beginning
-        if not self.orders_initialized:
-            print('create parent orders')
-            for stock in self.parent_orders:
-                self.parent_orders[stock].append(Parent_order(timestamp, self.vol_range, stock, self.stock_mean_vol[stock], self.time_window, self, self.child_window, self.volume_pattern))
-            self.orders_initialized = True
+        self.order_management.initialize_parent_orders(timestamp)
 
         # check every minute if orders are outdated
         # check if they are in their schedule         
         if self.check_status == None or self.check_status + pd.DateOffset(minutes=1) < timestamp:
             self.check_status = timestamp
             print(timestamp)
-            self.set_parent_order_status(timestamp)
-            self.stay_scheduled(timestamp)
-
-    def set_parent_order_status(self, timestamp:pd.Timestamp):
-        '''
-        method to check at a moment in time if orders are active depending on their time_window
-
-        :params timestamp:
-            pd.Timestamp, timestamp of the moment the method is called
-        '''
-        for stock in self.parent_orders:
-            if self.parent_orders[stock][-1].active == False and self.parent_orders[stock][-1].time_window[0] < timestamp and self.parent_orders[stock][-1].volume_left > 0:
-                self.parent_orders[stock][-1].active = True
-            elif self.parent_orders[stock][-1].time_window[1] < timestamp:
-                self.parent_orders[stock][-1].active = False
-                self.parent_orders[stock].append(Parent_order(timestamp, self.vol_range, stock, self.stock_mean_vol[stock], self.time_window, self, self.child_window, self.volume_pattern))
-
-    def stay_scheduled(self, timestamp:pd.Timestamp):
-        '''
-        method to send market orders to stay on the planed schedule
-
-        :params timestamp:
-            pd.Timestamp, moment of method call usually called out of on_time
-        '''
-        for stock in self.parent_orders:
-            market_order = self.parent_orders[stock][-1].schedule.stay_scheduled(timestamp)
-            if not market_order is None:
-                self.parent_orders[stock][-1].child_orders.append(self.market_interface.submit_order(
-                    market_id=market_order['symbol'],
-                    side=market_order['side'],
-                    quantity=market_order['quantity'],
-                    parent=market_order['parent'],
-                ))
-    
-    def update_needed(self, market_state, order:Order, timestamp):
-        trigger = False
-        level = '1'
-        side = 'Bid' if order.side == 'buy' else 'Ask'
-        if  market_state['L'+level+'-'+side+'Price'] != order.limit and order.parent.schedule.get_outstanding(timestamp)>0:
-            trigger = True
-
-        return trigger
-
-    def determinate_price(self, market_state, order: Union[Order, Parent_order]):
-        level = '1'
-        side = 'Bid' if order.side == 'buy' else 'Ask'
-        return market_state['L'+level+'-'+side+'Price']
+            self.order_management.check_status_on_time(timestamp)
+            parents, scheduling_orders = self.order_management.stay_scheduled(timestamp, self.market_interface.market_state_list)
+            for parent, scheduling_order in zip(parents, scheduling_orders):
+                parent.child_orders.append(
+                    self.market_interface.submit_order(
+                        market_id=scheduling_order['symbol'],
+                        limit=scheduling_order['limit'],
+                        side=scheduling_order['side'],
+                        quantity=scheduling_order['quantity'],
+                        parent=scheduling_order['parent'],
+                    )
+                )
 
     def update_limit_order(self, market_id, timestamp, market_state):
         '''
@@ -189,26 +147,21 @@ class Agent(BaseAgent):
         '''
         orders = self.market_interface.get_filtered_orders(market_id, status="ACTIVE")
         limit_order = False
+        create_new_order = False
         for order in orders:
             if not order.limit is None:
                 limit_order = True
-                if self.update_needed(market_state, order, timestamp):
+                if self.support.update_needed(market_state, order, timestamp):
                     self.market_interface.cancel_order(order)
-                    order.parent.child_orders.append(self.market_interface.submit_order(
-                                market_id=market_id, 
-                                side=order.side, 
-                                quantity=order.parent.schedule.get_outstanding(timestamp),
-                                limit=self.determinate_price(market_state, order),
-                                parent=order.parent
-                                ))
+                    create_new_order = True
 
-        if not limit_order:
-            parent_order = self.parent_orders[market_id][-1]
+        if not limit_order or create_new_order:
+            parent_order = self.order_management.get_recent_parent_order(market_id)
             parent_order.child_orders.append(self.market_interface.submit_order(
                                     market_id=market_id, 
                                     side=parent_order.side, 
                                     quantity=parent_order.schedule.get_outstanding(timestamp),
-                                    limit=self.determinate_price(market_state, parent_order),
+                                    limit=self.support.determinate_price(market_state, parent_order),
                                     parent=parent_order
                                     ))
 

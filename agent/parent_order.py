@@ -1,110 +1,24 @@
+# general imports
+from __future__ import annotations
 import random as rn
 import numpy as np
 import pandas as pd
-from env.market import Trade
+from typing import TYPE_CHECKING
 
-class Schedule():
-    '''
-    A Schedule object is a nessesary part of each parant order and manages the child order
-    timing of it
-    '''
-    def __init__(self, parent_order, child_window:int, pattern:list) -> None:
-        '''
-        mehtod that defines a time schedule per parent order which is called by the order itself
+# project imports
+from env.market import  Trade
+from agent.schedule import Schedule
 
-        :param parent_order:
-            Parent_order, object of the parent order which asks for a schedule
-        :param child_window:
-            int, length of a one point in the schedule to the next in minutes
-        :param pattern:
-            list[number], list of numbers which scetch a pattern for the order volumes
-            example: [1] -> linear pattern, [1,2] -> increasing pattern
-        '''
-        # generate timestamps
-        # account for across day time windows
-        time_stamps = []
-        time_unreached = True
-        count = 1
-        self.start_time = parent_order.time_window[0]
-        self.end_time = parent_order.time_window[1]
-        self.child_window = child_window
-        self.parent_order = parent_order
-        self.pattern = pattern
-
-        while time_unreached:
-            if self.start_time + pd.DateOffset(minutes=self.child_window * count) < parent_order.MARKET_END:
-                offset_time = self.start_time + pd.DateOffset(minutes=self.child_window * count)
-            else:
-                offset_time = parent_order.NEXT_MARKET_START + ((self.start_time + pd.DateOffset(minutes=self.child_window * count)) - parent_order.MARKET_END)
-            if   offset_time > self.end_time:
-                time_unreached = False
-            else:
-                time_stamps.append(offset_time)
-            count += 1
-
-        # pattern to distribution
-        x = np.linspace(0,1,len(pattern))
-        y = np.array(pattern)
-        x_inter = np.linspace(0,1,len(time_stamps))
-        y_inter = np.interp(x_inter,x,y)
-        percentages = y_inter/np.sum(y_inter)
-
-        # calculate volumes
-        volumes = np.maximum(parent_order.volume*percentages,1).astype(int)
-        vol_left = int(parent_order.volume - np.sum(volumes))
-        if vol_left > 0:
-            volumes[np.arange(vol_left)] += 1
-        elif vol_left < 0:
-            volumes[np.arange(len(time_stamps)+vol_left,len(time_stamps))] -= 1
-        self.scheduling = pd.DataFrame({'timestamp':time_stamps,'volume':volumes.tolist()})
-
-    def stay_scheduled(self, timestamp:pd.Timestamp) -> dict:
-        '''
-        method to send market orders to stay on the planed schedule
-
-        :params timestamp:
-            pd.Timestamp, moment of method call usually called out of on_time
-        '''
-        output = None
-        if self.parent_order.active:
-            orders_to_fill = self.scheduling[self.scheduling['timestamp']<timestamp]            
-            if orders_to_fill['volume'].sum() > 0:
-                output = {
-                    'symbol': self.parent_order.symbol,
-                    'side': self.parent_order.side,
-                    'quantity': int(orders_to_fill['volume'].sum()),
-                    'parent': self.parent_order
-                }
-        return output
-
-    def reduce_schedule(self, reduce_volume:float):
-        '''
-        method to actualize the schedule after an order was executed
-
-        :param reduce_volume:
-            float, number of shares traded
-        '''
-        for index, vol in self.scheduling['volume'].iteritems():
-            if 0 < vol <= reduce_volume:
-                reduce_volume -= vol
-                self.scheduling.loc[index,'volume'] = 0
-            elif vol > reduce_volume:
-                self.scheduling.loc[index,'volume'] -= reduce_volume
-                reduce_volume = 0
-    
-    def get_outstanding(self, timestamp) -> float:
-        if self.scheduling[self.scheduling['timestamp']<timestamp].index.empty:
-            ind = 0
-        else:
-            ind = max(self.scheduling[self.scheduling['timestamp']<timestamp].index)+1
-        return self.scheduling.loc[:ind,'volume'].sum()
+# quality of life imports
+if TYPE_CHECKING:
+    from agent.order_management import Order_Management_System
 
 class Parent_order():
     '''
     This is the Parent Order class wich is used to simulate incoming parent orders 
     and manege corresponding child orders
     '''
-    def __init__(self, ts:pd.Timestamp, volume_range:list, stock:str, avg_vol:float, time_window_length:int, agent, child_window:int, pattern:list) -> None:
+    def __init__(self, ts:pd.Timestamp, volume_range:list, stock:str, avg_vol:float, time_window_length:int, order_management:Order_Management_System, child_window:int, pattern:list) -> None:
         '''
         initializiation of an Parent order object
 
@@ -130,6 +44,7 @@ class Parent_order():
         self.NEXT_MARKET_START = pd.Timestamp(ts.year, ts.month, ts.day+1, 8)
         self.symbol = stock
         self.volume = int(volume_range[0] + rn.random() * (volume_range[1]-volume_range[0]) * avg_vol)
+        self.order_management = order_management
 
         ### WARNING static start at 8:xx for testing
         start_h = max(8,ts.hour) #rn.randint(8, self.MARKET_END.hour-1)
@@ -143,7 +58,6 @@ class Parent_order():
         else:
             self.time_window = [start_time, pd.Timestamp(ts.year, ts.month, ts.day, start_h+time_window_length,start_m)]
         self.side = rn.choice(['buy','sell'])
-        self.agent = agent        
         self.schedule = Schedule(self, child_window, pattern)
 
         # order status
@@ -165,11 +79,6 @@ class Parent_order():
         '''
         volume_old = self.volume-self.volume_left
         self.volume_left -= exec_trade.quantity
-        if self.volume_left <= 0:
-            self.active = False
-            child_window = self.schedule.child_window
-            pattern = self.schedule.pattern
-            self.agent.parent_orders[self.symbol].append(Parent_order(exec_trade.timestamp, self.agent.vol_range, self.symbol, self.agent.stock_mean_vol[self.symbol], self.agent.time_window, self.agent, child_window, pattern))
         self.schedule.reduce_schedule(exec_trade.quantity)
         if self.vwap == None:
             self.vwap = exec_trade.price
@@ -181,6 +90,7 @@ class Parent_order():
             else:
                 print(self.symbol,' standing : ',self.market_vwap/self.vwap)
 
+    # TODO move to order management system
     def actualize_vwap(self, trades_state:pd.Series):
         '''
         method to track the market vwap in the same time window as the parent order
