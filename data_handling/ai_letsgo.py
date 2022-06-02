@@ -13,7 +13,7 @@ from keras.layers.embeddings import Embedding
 import tensorflow as tf
 import keras
 import keras.backend as K
-from hft.handle_data import get_file_names, get_raw_book, get_midpoints
+from data_handling.handle_data import get_file_names, get_raw_book, get_midpoints
 
 
 def plot_book(book_state:pd.Series):
