@@ -7,6 +7,7 @@ from typing import Union, TYPE_CHECKING
 
 # project imports
 from env.market import Order
+from data_handling.ai_letsgo import everknowing_entity
 
 # quality of life imports
 if TYPE_CHECKING:
@@ -35,20 +36,23 @@ class Decission_support():
         side = 'Bid' if order.side == 'buy' else 'Ask'
         if  market_state['L'+level+'-'+side+'Price'] != order.limit and order.parent.schedule.get_outstanding(timestamp)>0:
             trigger = True
-
         return trigger
 
     def determinate_price(self, market_state, order: Union[Order, Parent_order]):
         level = '3'
         side = 'Bid' if order.side == 'buy' else 'Ask'
         return market_state['L'+level+'-'+side+'Price']
-
-    def get_limit(self, book_state):
-        return 5
-
-    def get_edge():
-        return 5
     
-    def get_alpha(self, book_state):
+    def get_alpha(self, side, stock, book_state):
+        timestamp = book_state['TIMESTAMP_UTC']
+        direction = everknowing_entity(timestamp, stock, 500)
+        # edge would be the standard deviation used for the label
+        if side == 'sell':
+            alpha = direction * -1
+        return alpha
 
-        return rn.random()>0.5
+    def get_intensity():
+        pass
+
+    def get_execution_prob():
+        pass

@@ -83,56 +83,34 @@ for stock in stock_list:
                 x_data = np.concatenate((x_data,out[0]), axis=0)
                 y_data = np.concatenate((y_data,out[1]), axis=0)
 
-def everknowing_entity():
-    midpoints = get_midpoints(path_book+files[3])
-    in_time = True
-    timestamp = pd.Timestamp(2021,midpoints.index[0].month,midpoints.index[0].day,8,0)
-    labels = {'time':[],'label':[]}
-    ind = 0
-    while in_time:
-        tmp_time = timestamp + pd.DateOffset(minutes = 1)
-        mid_start = midpoints[(midpoints.index > timestamp) & (midpoints.index < timestamp+pd.DateOffset(seconds=5))].mean()
-        mid_end = midpoints[(midpoints.index > tmp_time) & (midpoints.index < tmp_time+pd.DateOffset(seconds=5))].mean()
-        labels['label'].append(mid_end>mid_start)
-        labels['time'].append(timestamp)
-        timestamp = tmp_time
-        ind += 1
-        if tmp_time > pd.Timestamp(2021,book_tmp.index[0].month,book_tmp.index[0].day,16,29):
-            in_time = False
-    labels = pd.DataFrame(labels).reset_index('time')
-    return labels
-
-def data_sample(i):
-    stock_list = ['Adidas', 'Allianz','BASF','Bayer','BMW','Continental','Covestro','Covestro','Daimler','DeutscheBank','DeutscheBörse']
-    stock = stock_list[i]
+def everknowing_entity(timestamp:pd.Timestamp, stock:str, steps:int) -> int:
     path_book = u'C:/Users/Lucas/Downloads/archive/_shared_storage/read_only/efn2_backtesting/book/'
     dir_list_b = [unicodedata.normalize('NFC', f) for f in os.listdir(path_book)]
     files = get_file_names(stock, dir_list_b)
-    for file in files:
-        book_tmp = get_raw_book(path_book+file)
-        if not book_tmp.empty:
-            minutes = transform_minutes(book_tmp)
-            out = build_training(minutes)
-        else:
-            out = (np.empty(1),np.empty(1))
-    return out
+    midpoints = get_midpoints(path_book+files[timestamp.day-1])
+    ind_0 = midpoints.index[midpoints.index > timestamp][0]
+    ind_n = midpoints.index[midpoints.index > timestamp][steps]
+    vola = midpoints[(midpoints.index < timestamp) & (midpoints.index > timestamp-pd.Timedelta(minutes=10))].std()
+    if midpoints[ind_0] + vola < midpoints[ind_n]:
+        up = 1
+    elif midpoints[ind_0] - vola > midpoints[ind_n]:
+        up = -1
+    else:
+        up = 0
+    return up
 
-pool_job =  multiprocessing.Pool()
-samples = pool_job.map(data_sample,range(len(stock_list)))
+def lstm_model():
+    model = Sequential()
+    model.add(Dense(64,activation='tanh'))
+    model.add(Dropout(0.3,noise_shape=(None,20,64)))
+    model.add(Bidirectional(CuDNNLSTM(64)))
+    model.add(Dense(64,activation='tanh'))
+    model.add(Dense(1,activation='sigmoid', kernel_regularizer=keras.regularizers.L1L2(l1=1e-8, l2=1e-8),
+                                        bias_regularizer=keras.regularizers.L2(1e-8),
+                                        activity_regularizer=keras.regularizers.L2(1e-8)))
+    model.compile(loss=tf.keras.losses.BinaryCrossentropy() , optimizer=tf.keras.optimizers.Adam(learning_rate=1e-5), metrics=tf.keras.metrics.BinaryAccuracy())
 
-
-
-model = Sequential()
-model.add(Dense(64,activation='tanh'))
-model.add(Dropout(0.3,noise_shape=(None,20,64)))
-model.add(Bidirectional(CuDNNLSTM(64)))
-model.add(Dense(64,activation='tanh'))
-model.add(Dense(1,activation='sigmoid', kernel_regularizer=keras.regularizers.L1L2(l1=1e-8, l2=1e-8),
-                                    bias_regularizer=keras.regularizers.L2(1e-8),
-                                    activity_regularizer=keras.regularizers.L2(1e-8)))
-model.compile(loss=tf.keras.losses.BinaryCrossentropy() , optimizer=tf.keras.optimizers.Adam(learning_rate=1e-5), metrics=tf.keras.metrics.BinaryAccuracy())
-
-model.fit(x_data, y_data, batch_size=8, epochs=4, validation_split=0.1)
+    model.fit(x_data, y_data, batch_size=8, epochs=4, validation_split=0.1)
 
 # last result acc=58, val_acc=60
 # multi stock predictor?
