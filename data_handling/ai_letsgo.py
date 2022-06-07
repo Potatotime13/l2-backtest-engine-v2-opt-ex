@@ -27,7 +27,7 @@ def plot_book(book_state:pd.Series):
 
 def transform_minutes(book_states):
     in_time = True
-    timestamp = pd.Timestamp(2021,book_tmp.index[0].month,book_tmp.index[0].day,8,0)
+    timestamp = pd.Timestamp(2021,book_states.index[0].month, book_states.index[0].day,8,0)
     minutes = np.zeros((int(60*8.5),40))
     ind = 0
     while in_time:
@@ -35,7 +35,7 @@ def transform_minutes(book_states):
         minutes[ind,:] = book_states[(book_states.index > timestamp) & (book_states.index < tmp_time)].mean()
         timestamp = tmp_time
         ind += 1
-        if tmp_time > pd.Timestamp(2021,book_tmp.index[0].month,book_tmp.index[0].day,16,29):
+        if tmp_time > pd.Timestamp(2021,book_states.index[0].month,book_states.index[0].day,16,29):
             in_time = False
     return minutes
 
@@ -50,38 +50,39 @@ def build_training(mins):
     x_vals[np.isnan(x_vals)] = 0
     return x_vals, y_vals
 
-def check_time_window():
-    book_test = get_raw_book(path_book+files[0])
-    in_time = True
-    timestamp = pd.Timestamp(2021,1,5,8,0)
-    while in_time:
-        tmp_time = timestamp + pd.DateOffset(minutes = 1)
-        plot_book(book_test[ (book_test.index > timestamp) & (book_test.index < tmp_time)].mean())
-        timestamp = tmp_time
-        if tmp_time > pd.Timestamp(2021,1,5,8,25):
-            in_time = False
+if False:
+    def check_time_window():
+        book_test = get_raw_book(path_book+files[0])
+        in_time = True
+        timestamp = pd.Timestamp(2021,1,5,8,0)
+        while in_time:
+            tmp_time = timestamp + pd.DateOffset(minutes = 1)
+            plot_book(book_test[ (book_test.index > timestamp) & (book_test.index < tmp_time)].mean())
+            timestamp = tmp_time
+            if tmp_time > pd.Timestamp(2021,1,5,8,25):
+                in_time = False
 
-stock_list = ['Adidas', 'Allianz','BASF','Bayer','BMW','Continental','Covestro','Covestro','Daimler','DeutscheBank','DeutscheBörse']
-path_trades = u'C:/Users/Lucas/Downloads/archive/_shared_storage/read_only/efn2_backtesting/trades/'
-path_book = u'C:/Users/Lucas/Downloads/archive/_shared_storage/read_only/efn2_backtesting/book/'
-dir_list_t = [unicodedata.normalize('NFC', f) for f in os.listdir(path_trades)]
-dir_list_b = [unicodedata.normalize('NFC', f) for f in os.listdir(path_book)]
+    stock_list = ['Adidas', 'Allianz','BASF','Bayer','BMW','Continental','Covestro','Covestro','Daimler','DeutscheBank','DeutscheBörse']
+    path_trades = u'C:/Users/Lucas/Downloads/archive/_shared_storage/read_only/efn2_backtesting/trades/'
+    path_book = u'C:/Users/Lucas/Downloads/archive/_shared_storage/read_only/efn2_backtesting/book/'
+    dir_list_t = [unicodedata.normalize('NFC', f) for f in os.listdir(path_trades)]
+    dir_list_b = [unicodedata.normalize('NFC', f) for f in os.listdir(path_book)]
 
-x_data = None
-y_data = None
-for stock in stock_list:
-    files = get_file_names(stock, dir_list_b)
-    for file in tqdm(files):
-        book_tmp = get_raw_book(path_book+file)
-        if not book_tmp.empty:
-            minutes = transform_minutes(book_tmp)
-            out = build_training(minutes)
-            if x_data is None:
-                x_data = out[0]
-                y_data = out[1]
-            else:
-                x_data = np.concatenate((x_data,out[0]), axis=0)
-                y_data = np.concatenate((y_data,out[1]), axis=0)
+    x_data = None
+    y_data = None
+    for stock in stock_list:
+        files = get_file_names(stock, dir_list_b)
+        for file in tqdm(files):
+            book_tmp = get_raw_book(path_book+file)
+            if not book_tmp.empty:
+                minutes = transform_minutes(book_tmp)
+                out = build_training(minutes)
+                if x_data is None:
+                    x_data = out[0]
+                    y_data = out[1]
+                else:
+                    x_data = np.concatenate((x_data,out[0]), axis=0)
+                    y_data = np.concatenate((y_data,out[1]), axis=0)
 
 def everknowing_entity(timestamp:pd.Timestamp, stock:str, steps:int) -> int:
     path_book = u'C:/Users/Lucas/Downloads/archive/_shared_storage/read_only/efn2_backtesting/book/'
@@ -99,7 +100,7 @@ def everknowing_entity(timestamp:pd.Timestamp, stock:str, steps:int) -> int:
         up = 0
     return up
 
-def lstm_model():
+def lstm_model(x_data, y_data):
     model = Sequential()
     model.add(Dense(64,activation='tanh'))
     model.add(Dropout(0.3,noise_shape=(None,20,64)))

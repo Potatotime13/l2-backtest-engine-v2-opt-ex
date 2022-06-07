@@ -9,6 +9,8 @@ from agent.parent_order import Parent_order
 # quality of life imports
 if TYPE_CHECKING:
     from main import Agent
+    from env.market import Order
+    from env.market import MarketState
 
 
 class Order_Management_System():
@@ -49,6 +51,47 @@ class Order_Management_System():
 
     def order_filled(self, parent: Parent_order, timestamp: pd.Timestamp):
         self.generate_parent_order(parent.symbol, timestamp)
+    
+    def get_order_book_position(self, market_state:MarketState, order:Order):
+        '''
+        method wich returns relative queue position of an order on a limit level
+
+        :param market_state:
+            MarketState, returned by the market_interface
+        :param order:
+            Order, order createt through submit_order
+        '''
+        if order.status=='ACTIVE':
+            limit = order.limit
+            time = order.timestamp
+            side = order.side
+            buy_dict, sell_dict = market_state.state
+            position = 0
+            volume = 0
+            last = True
+            if side == 'buy':
+                try: 
+                    level = buy_dict[limit]
+                except KeyError:
+                    return 0.0
+            else:
+                try:
+                    level = sell_dict[limit]
+                except KeyError:
+                    return 0.0
+            for order_ in level:
+                volume += order_[1]
+                if order_[0] > time and last:
+                    last = False
+                    position = volume
+            if last:
+                position = volume
+            if volume == 0:
+                return 0.0
+            else:
+                return position/volume
+        else:
+            return None
 
     def generate_parent_order(self, market_id: str, timestamp: pd.Timestamp) -> None:
         '''

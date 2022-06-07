@@ -129,7 +129,8 @@ class Agent(BaseAgent):
             self.check_status = timestamp
             print(timestamp)
             self.order_management.check_status_on_time(timestamp)
-            parents, scheduling_orders = self.order_management.stay_scheduled(timestamp, self.market_interface.market_state_list)
+            parents, scheduling_orders = self.order_management.stay_scheduled(
+                timestamp, self.market_interface.market_state_list)
             for parent, scheduling_order in zip(parents, scheduling_orders):
                 parent.child_orders.append(
                     self.market_interface.submit_order(
@@ -152,18 +153,25 @@ class Agent(BaseAgent):
             if not order.limit is None:
                 limit_order = True
                 if self.support.update_needed(market_state, order, timestamp):
+                    print(
+                        'order position: ', 
+                        self.order_management.get_order_book_position(
+                            self.market_interface.market_state_list[order.market_id], order
+                    )
+                )
                     self.market_interface.cancel_order(order)
                     create_new_order = True
 
         if not limit_order or create_new_order:
             parent_order = self.order_management.get_recent_parent_order(market_id)
-            parent_order.child_orders.append(self.market_interface.submit_order(
-                                    market_id=market_id, 
-                                    side=parent_order.side, 
-                                    quantity=parent_order.schedule.get_outstanding(timestamp),
-                                    limit=self.support.determinate_price(market_state, parent_order),
-                                    parent=parent_order
-                                    ))
+            if parent_order.schedule.get_outstanding(timestamp)>0:
+                parent_order.child_orders.append(self.market_interface.submit_order(
+                    market_id=market_id, 
+                    side=parent_order.side, 
+                    quantity=parent_order.schedule.get_outstanding(timestamp),
+                    limit=self.support.determinate_price(market_state, parent_order),
+                    parent=parent_order
+                ))
 
 
     def update_schedule(self, parent_order):

@@ -32,14 +32,6 @@ def flatten_data(data:dict):
             data_flat.append({'TIMESTAMP_UTC':d['TIMESTAMP_UTC'], 'Price':d['Price'][0], 'Volume':d['Volume'][0]})
     return data_flat
 
-stock_list = ['Adidas', 'Allianz','BASF','Bayer','BMW','Continental','Covestro','Covestro','Daimler','DeutscheBank','DeutscheBörse']
-path = u'C:/Users/Lucas/Downloads/test_trade_download/trades'
-dir_list = [unicodedata.normalize('NFC', f) for f in os.listdir(path)]
-
-path_stem = u'C:/Users/Lucas/Downloads/archive/_shared_storage/read_only/efn2_backtesting/'
-path_b = path_stem + u'book/Book_Adidas_DE_20210104_20210104.csv.gz'
-path_t = path_stem + u'trades/Trades_Adidas_DE_20210104_20210104.json'
-
 def get_raw_book(path):
     data_tmp = pd.read_csv(path, compression='gzip')
     data_tmp['TIMESTAMP_UTC'] = pd.to_datetime(data_tmp['TIMESTAMP_UTC'])
@@ -66,11 +58,16 @@ def get_trades(path):
     else:
         return None
 
-stock_list = ['Adidas', 'Allianz','BASF','Bayer','BMW','Continental','Covestro','Covestro','Daimler','DeutscheBank','DeutscheBörse']
-path_trades = u'C:/Users/Lucas/Downloads/archive/_shared_storage/read_only/efn2_backtesting/trades/'
-path_book = u'C:/Users/Lucas/Downloads/archive/_shared_storage/read_only/efn2_backtesting/book/'
-dir_list_t = [unicodedata.normalize('NFC', f) for f in os.listdir(path_trades)]
-dir_list_b = [unicodedata.normalize('NFC', f) for f in os.listdir(path_book)]
+def get_dirlist(book:bool):
+    path_trades = u'C:/Users/Lucas/Downloads/archive/_shared_storage/read_only/efn2_backtesting/trades/'
+    path_book = u'C:/Users/Lucas/Downloads/archive/_shared_storage/read_only/efn2_backtesting/book/'
+    dir_list_t = [unicodedata.normalize('NFC', f) for f in os.listdir(path_trades)]
+    dir_list_b = [unicodedata.normalize('NFC', f) for f in os.listdir(path_book)]
+
+    if book:
+        return dir_list_b, path_book
+    else:
+        return dir_list_t, path_trades
 
 def create_volume_distribution(stock_list, dir_list_t, dir_list_b):
     vol_dist = {}
@@ -100,7 +97,6 @@ def create_volume_distribution(stock_list, dir_list_t, dir_list_b):
         vol_dist[stock] = avg_dist.mean(axis=1)
         vol_dist[stock].index = vol_dist[stock].index.set_names('edge')
     return vol_dist
-
 
 def create_volume_summary(stock_list, dir_list):
     volume_summary = {}
@@ -169,3 +165,6 @@ def plot_vols(volume_summary:dict):
     plt.xlabel('hours')
     plt.ylabel('avg vol')
     plt.show()
+
+if __name__=='__main__':
+    stock_list = ['Adidas', 'Allianz','BASF','Bayer','BMW','Continental','Covestro','Covestro','Daimler','DeutscheBank','DeutscheBörse']
