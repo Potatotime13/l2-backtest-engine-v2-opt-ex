@@ -14,7 +14,7 @@ from agent.order_management import Order_Management_System
 
 class Agent(BaseAgent):
 
-    def __init__(self, name, identifier_list, *args, **kwargs):
+    def __init__(self, name, identifies, *args, **kwargs):
         """
         Trading agent implementation.
 
@@ -64,13 +64,13 @@ class Agent(BaseAgent):
 
         ### extract stock list out of identifier list
         self.stock_list = []
-        for val in identifier_list:
+        for val in identifies:
             stock = re.split(r'\.(?!\d)', val)[0]
             if len(self.stock_list) == 0 or self.stock_list[-1] != stock: 
                 self.stock_list.append(stock)
 
         # Decsission support
-        self.support = Decission_support(self.stock_list,None)
+        self.support = Decission_support(self.stock_list, None)
 
         ### variable parameter set
         self.order_management = Order_Management_System(self.stock_list, self)
@@ -211,11 +211,7 @@ if __name__ == "__main__":
     # TODO: INSTANTIATE AGENT. Please refer to the corresponding file for more 
     # information. 
 
-    agent = Agent(
-        name="test_agent",
-        identifier_list=identifier_list,
-        # ...
-    )
+    agent = Agent(name="test_agent", identifies=identifier_list)
 
     # TODO: INSTANTIATE BACKTEST. Please refer to the corresponding file for 
     # more information. 
