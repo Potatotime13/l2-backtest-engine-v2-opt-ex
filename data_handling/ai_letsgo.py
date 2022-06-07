@@ -4,15 +4,10 @@ import os
 import unicodedata
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from joblib import Parallel, delayed
-import multiprocessing
-
 from keras.models import Sequential
-from keras.layers import Input, CuDNNLSTM, Dense, Dropout, Bidirectional
-from keras.layers.embeddings import Embedding
+from keras.layers import CuDNNLSTM, Dense, Dropout, Bidirectional
 import tensorflow as tf
 import keras
-import keras.backend as K
 from data_handling.handle_data import get_file_names, get_raw_book, get_midpoints
 
 
