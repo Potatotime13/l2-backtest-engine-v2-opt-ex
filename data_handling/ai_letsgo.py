@@ -3,7 +3,7 @@ import pandas as pd
 import os
 import unicodedata
 import matplotlib.pyplot as plt
-# from tqdm import tqdm
+from tqdm import tqdm
 from keras.models import Sequential
 from keras.layers import CuDNNLSTM, Dense, Dropout, Bidirectional
 import tensorflow as tf
@@ -55,9 +55,6 @@ def build_training(mins):
     x_vals[np.isnan(x_vals)] = 0
     return x_vals, y_vals
 
-
-"""
-if False:
     def check_time_window():
         book_test = get_raw_book(path_book+files[0])
         in_time = True
@@ -70,6 +67,29 @@ if False:
             if tmp_time > pd.Timestamp(2021, 1, 5, 8, 25):
                 in_time = False
 
+
+def everknowing_entity(timestamp: pd.Timestamp, stock: str, steps: int) -> int:
+    path_book = u'C:/Users/Lucas/Downloads/archive/_shared_storage/' \
+                u'read_only/efn2_backtesting/book/'
+    dir_list_b = [unicodedata.normalize('NFC', f)
+                  for f in os.listdir(path_book)]
+    files = get_file_names(stock, dir_list_b)
+    midpoints = get_midpoints(path_book+files[timestamp.day-1])
+    ind_0 = midpoints.index[midpoints.index > timestamp][0]
+    ind_n = midpoints.index[midpoints.index > timestamp][steps]
+    vola = midpoints[(midpoints.index < timestamp)
+                     & (midpoints.index > timestamp
+                        - pd.Timedelta(minutes=10))].std()
+    if midpoints[ind_0] + vola < midpoints[ind_n]:
+        up = 1
+    elif midpoints[ind_0] - vola > midpoints[ind_n]:
+        up = -1
+    else:
+        up = 0
+    return up
+
+
+def run_lstm_training():
     stock_list = ['Adidas', 'Allianz', 'BASF', 'Bayer', 'BMW', 'Continental', 
                   'Covestro', 'Covestro', 'Daimler', 'DeutscheBank', 
                   'DeutscheBörse']
@@ -98,31 +118,6 @@ if False:
                 else:
                     x_data = np.concatenate((x_data, out[0]), axis=0)
                     y_data = np.concatenate((y_data, out[1]), axis=0)
-"""
-
-
-def everknowing_entity(timestamp: pd.Timestamp, stock: str, steps: int) -> int:
-    path_book = u'C:/Users/Lucas/Downloads/archive/_shared_storage/' \
-                u'read_only/efn2_backtesting/book/'
-    dir_list_b = [unicodedata.normalize('NFC', f)
-                  for f in os.listdir(path_book)]
-    files = get_file_names(stock, dir_list_b)
-    midpoints = get_midpoints(path_book+files[timestamp.day-1])
-    ind_0 = midpoints.index[midpoints.index > timestamp][0]
-    ind_n = midpoints.index[midpoints.index > timestamp][steps]
-    vola = midpoints[(midpoints.index < timestamp)
-                     & (midpoints.index > timestamp
-                        - pd.Timedelta(minutes=10))].std()
-    if midpoints[ind_0] + vola < midpoints[ind_n]:
-        up = 1
-    elif midpoints[ind_0] - vola > midpoints[ind_n]:
-        up = -1
-    else:
-        up = 0
-    return up
-
-
-def lstm_model():
     model = Sequential()
     model.add(Dense(64, activation='tanh'))
     model.add(Dropout(0.3, noise_shape=(None, 20, 64)))
@@ -137,7 +132,6 @@ def lstm_model():
                   optimizer=tf.keras.optimizers.Adam(learning_rate=1e-5),
                   metrics=tf.keras.metrics.BinaryAccuracy())
 
-    # TODO hier habe ich noch einen fehler mit den Referenzen x und y
     model.fit(x_data, y_data, batch_size=8, epochs=4, validation_split=0.1)
 
 # last result acc=58, val_acc=60

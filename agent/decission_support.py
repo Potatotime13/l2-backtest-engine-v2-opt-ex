@@ -1,7 +1,7 @@
 # general imports
 from __future__ import annotations
 import pandas as pd
-# import numpy as np
+import numpy as np
 # import random as rn
 from typing import Union, TYPE_CHECKING
 
@@ -51,6 +51,18 @@ class DecisionSupport:
         level = '3'
         side = 'Bid' if order.side == 'buy' else 'Ask'
         return market_state['L'+level+'-'+side+'Price']
+
+    def determinate_price_TODO(market_state,
+                          order: Union[Order, Parent_order]):
+        """
+        This function is an empty frame for the limit price calculation using the different
+        signals of the decission supports
+        """
+        price_movement = np.zeros((5))
+        execution_probs = np.zeros((20))
+        long_term_movement = np.zeros((5))
+        limit = 2
+        return limit
     
     @staticmethod
     def get_alpha(side, stock, book_state):

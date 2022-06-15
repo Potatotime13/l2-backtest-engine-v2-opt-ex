@@ -26,7 +26,7 @@ class Agent(BaseAgent):
         - on_quote(self, market_id, book_state)
         - on_trade(self, market_id, trade_state)
         - on_time(self, timestamp, timestamp_next)
-        
+
         In order to interact with a market, the trading agent needs to use the 
         market_interface instance available at `self.market_interface` that 
         provides the following methods to create and delete orders waiting to 
@@ -67,7 +67,7 @@ class Agent(BaseAgent):
         self.stock_list = []
         for val in identifies:
             stock = re.split(r'\.(?!\d)', val)[0]
-            if len(self.stock_list) == 0 or self.stock_list[-1] != stock: 
+            if len(self.stock_list) == 0 or self.stock_list[-1] != stock:
                 self.stock_list.append(stock)
 
         # Decision support
@@ -75,7 +75,7 @@ class Agent(BaseAgent):
 
         # variable parameter set
         self.order_management = OrderManagementSystem(self.stock_list, self)
-        self.check_status = None        
+        self.check_status = None
 
         # static parameter set
         self.vol_range = [0.05, 0.07]    # percent of daily vol
@@ -127,7 +127,7 @@ class Agent(BaseAgent):
         self.order_management.initialize_parent_orders(timestamp)
 
         # check every minute if orders are outdated
-        # check if they are in their schedule         
+        # check if they are in their schedule
         if self.check_status is None \
                 or self.check_status + pd.DateOffset(minutes=1) < timestamp:
             self.check_status = timestamp
@@ -160,7 +160,7 @@ class Agent(BaseAgent):
                 limit_order = True
                 if self.support.update_needed(market_state, order, timestamp):
                     print(
-                        'order position: ', 
+                        'order position: ',
                         self.order_management.get_order_book_position(
                             self.market_interface.market_state_list[
                                 order.market_id], order)
@@ -219,20 +219,20 @@ if __name__ == "__main__":
         # "DeutscheBörse.BOOK", "DeutscheBörse.TRADES",
     ]
 
-    # TODO: INSTANTIATE AGENT. Please refer to the corresponding file for more 
-    # information. 
+    # TODO: INSTANTIATE AGENT. Please refer to the corresponding file for more
+    # information.
 
     agent = Agent(name="test_agent", identifies=identifier_list)
 
-    # TODO: INSTANTIATE BACKTEST. Please refer to the corresponding file for 
-    # more information. 
-    
+    # TODO: INSTANTIATE BACKTEST. Please refer to the corresponding file for
+    # more information.
+
     backtest = Backtest(
-        agent=agent, 
+        agent=agent,
     )
 
-    # TODO: RUN BACKTEST. Please refer to the corresponding file for more 
-    # information. 
+    # TODO: RUN BACKTEST. Please refer to the corresponding file for more
+    # information.
     '''
     # Option 1: run agent against a series of generated episodes, that is, 
     # generate episodes with the same episode_buffer and episode_length
@@ -257,11 +257,11 @@ if __name__ == "__main__":
         time_end="16:30:00",
     )
     '''
-    # Option 3: run agent against a series of specified episodes, that is, 
-    # list a tuple (episode_start_buffer, episode_start, episode_end) for each 
+    # Option 3: run agent against a series of specified episodes, that is,
+    # list a tuple (episode_start_buffer, episode_start, episode_end) for each
     # episode
     backtest.run_episode_list(identifier_list=identifier_list, episode_list=[
         ("2021-01-04T08:00:00", "2021-01-04T08:15:00", "2021-01-04T09:30:00"),
         #  ...
-        ],
+    ],
     )
