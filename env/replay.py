@@ -626,7 +626,7 @@ class Backtest:
 
         # save report
         self.result_list.append(result)
-
+        self.agent.save_stats()
         # reset agent ---
 
         # ...

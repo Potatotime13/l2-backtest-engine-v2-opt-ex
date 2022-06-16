@@ -78,9 +78,10 @@ class Agent(BaseAgent):
         self.check_status = None
 
         # static parameter set
-        self.vol_range = [0.05, 0.07]    # percent of daily vol
-        self.time_window = 1            # hours
-        self.child_window = 2           # minutes TODO: maybe dynamic per stock
+        self.vol_range = [0.05, 0.06]    # percent of daily vol
+        self.time_window = 1             # hours
+        self.child_window = 2            # minutes TODO: maybe dynamic per stock
+        self.level = 0
 
     def on_quote(self, market_id: str, book_state: pd.Series):
         """
@@ -96,6 +97,7 @@ class Agent(BaseAgent):
             if self.order_management.get_recent_parent_order(market_id).active:
                 self.update_limit_order(market_id, book_state['TIMESTAMP_UTC'],
                                         book_state)
+                self.order_management.set_midpoint(market_id, book_state)
 
     def on_trade(self, market_id: str, trades_state: pd.Series):
         """
@@ -131,7 +133,6 @@ class Agent(BaseAgent):
         if self.check_status is None \
                 or self.check_status + pd.DateOffset(minutes=1) < timestamp:
             self.check_status = timestamp
-            print(timestamp)
             self.order_management.check_status_on_time(timestamp)
             parents, scheduling_orders = self.order_management.stay_scheduled(
                 timestamp, self.market_interface.market_state_list)
@@ -159,12 +160,6 @@ class Agent(BaseAgent):
             if order.limit is not None:
                 limit_order = True
                 if self.support.update_needed(market_state, order, timestamp):
-                    print(
-                        'order position: ',
-                        self.order_management.get_order_book_position(
-                            self.market_interface.market_state_list[
-                                order.market_id], order)
-                    )
                     self.market_interface.cancel_order(order)
                     create_new_order = True
 
@@ -183,6 +178,9 @@ class Agent(BaseAgent):
                         parent=parent_order
                     )
                 )
+
+    def save_stats(self):
+        self.order_management.save_stats()
 
     def update_schedule(self, parent_order):
         """
@@ -261,7 +259,7 @@ if __name__ == "__main__":
     # list a tuple (episode_start_buffer, episode_start, episode_end) for each
     # episode
     backtest.run_episode_list(identifier_list=identifier_list, episode_list=[
-        ("2021-01-04T08:00:00", "2021-01-04T08:15:00", "2021-01-04T09:30:00"),
+        ("2021-01-04T08:00:00", "2021-01-04T08:15:00", "2021-01-04T16:30:00"),
         #  ...
     ],
     )

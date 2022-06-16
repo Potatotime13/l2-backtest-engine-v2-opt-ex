@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from agent.order_management import OrderManagementSystem
 
 
-# TODO alter Name war Parent_order()
 class ParentOrder:
     """
     This is the Parent Order class wich is used to simulate incoming
@@ -56,7 +55,7 @@ class ParentOrder:
 
         # WARNING static start at 8:xx for testing
         start_h = max(8, ts.hour)  # rn.randint(8, self.MARKET_END.hour-1)
-        start_m = rn.randint(15, 59)
+        start_m = ts.minute+2 #rn.randint(15, 59)
         ############################################
 
         start_time = pd.Timestamp(ts.year, ts.month, ts.day, start_h, start_m)
@@ -81,8 +80,13 @@ class ParentOrder:
         self.child_orders = []        
         self.volume_left = self.volume
         self.vwap = None
+        self.stats = pd.DataFrame({'time':[],'volume':[],'price':[],'midpoint':[],'vwap':[],'market_vwap':[],'twap':[],'market_twap':[]})
+        self.last_midpoint = None
         self.market_vwap = None
         self.market_volume = None
+        # TODO
+        self.twap = 1
+        self.market_twap = 1
 
         print(self.volume, self.symbol, self.side, self.time_window[0])
     
@@ -107,9 +111,33 @@ class ParentOrder:
                 print(self.symbol, ' standing : ', self.vwap/self.market_vwap)
             else:
                 print(self.symbol, ' standing : ', self.market_vwap/self.vwap)
+        
+        # update stats
+        self.stats = pd.concat([self.stats,
+                                pd.DataFrame({
+                                    'time':[exec_trade.timestamp],
+                                    'volume':[exec_trade.quantity],
+                                    'price':[exec_trade.price],
+                                    'midpoint':[self.last_midpoint],
+                                    'vwap':[self.vwap],
+                                    'market_vwap':[self.market_vwap],
+                                    'twap':[self.twap],
+                                    'market_twap':[self.market_twap]
+                                    })])
+        
+        # order filled
+        if self.volume_left<=0:
+            self.active = False
+            self.order_management.order_filled(self, exec_trade.timestamp)
+
+    def set_last_midpoint(self, midpoint):
+        """
+        soos
+        """
+        self.last_midpoint = midpoint
 
     # TODO move to order management system
-    def actualize_vwap(self, trades_state: pd.Series):
+    def actualize_market_vwap(self, trades_state: pd.Series):
         """
         method to track the market vwap in the same time window
         as the parent order

@@ -11,7 +11,7 @@ from data_handling.ai_letsgo import everknowing_entity
 
 # quality of life imports
 if TYPE_CHECKING:
-    from agent.parent_order import Parent_order
+    from agent.parent_order import ParentOrder
 
 
 # TODO Prüfen, ob das einen Fehler gibt.
@@ -47,13 +47,13 @@ class DecisionSupport:
 
     @staticmethod
     def determinate_price(market_state,
-                          order: Union[Order, Parent_order]):
+                          order: Union[Order, ParentOrder]):
         level = '3'
         side = 'Bid' if order.side == 'buy' else 'Ask'
         return market_state['L'+level+'-'+side+'Price']
 
     def determinate_price_TODO(market_state,
-                          order: Union[Order, Parent_order]):
+                          order: Union[Order, ParentOrder]):
         """
         This function is an empty frame for the limit price calculation using the different
         signals of the decission supports
