@@ -1,6 +1,5 @@
 # general imports
 from __future__ import annotations
-# import random as rn
 import numpy as np
 import pandas as pd
 from typing import TYPE_CHECKING
@@ -19,6 +18,7 @@ class Schedule:
     the child order
     timing of it
     """
+
     def __init__(self, parent_order: ParentOrder, child_window: int,
                  pattern: list) -> None:
         """
@@ -50,25 +50,26 @@ class Schedule:
                     + pd.DateOffset(minutes=self.child_window * count) \
                     < parent_order.MARKET_END:
                 offset_time = self.start_time \
-                              + pd.DateOffset(
-                                minutes=self.child_window * count)
+                    + pd.DateOffset(
+                        minutes=self.child_window * count)
             else:
                 offset_time = parent_order.NEXT_MARKET_START \
-                              + ((self.start_time
-                                  + pd.DateOffset(
-                                    minutes=self.child_window * count))
-                                 - parent_order.MARKET_END)
+                    + ((self.start_time
+                        + pd.DateOffset(
+                            minutes=self.child_window * count))
+                       - parent_order.MARKET_END)
             if offset_time > self.end_time:
                 time_unreached = False
             else:
                 time_stamps.append(offset_time)
             count += 1
-        
+
         # meta schedule
         diff = int((self.end_time-self.start_time).seconds / 3600)
         self.meta_schedule_time = [self.start_time+pd.DateOffset(hours=i)
                                    for i in range(1, diff)]
         self.meta_schedule_time.append(self.end_time-pd.DateOffset(minutes=5))
+        self.meta_schedule_time.append(self.end_time-pd.DateOffset(minutes=max(child_window//2,1)))
         self.meta_schedule = pd.DataFrame(
             {'time': self.meta_schedule_time,
              'Done': [False for _ in range(len(self.meta_schedule_time))]}
@@ -88,12 +89,13 @@ class Schedule:
         if vol_left > 0:
             volumes[np.arange(vol_left)] += 1
         elif vol_left < 0:
-            volumes[np.arange(len(time_stamps) +
-                              vol_left, len(time_stamps))] -= 1
+            volumes[np.arange(len(time_stamps)%abs(vol_left),
+                            len(time_stamps),
+                            len(time_stamps)//abs(vol_left))] -= 1 
         self.scheduling = pd.DataFrame({'timestamp': time_stamps,
                                         'volume': volumes.tolist()})
 
-    def stay_scheduled(self, market_state: MarketState,
+    def stay_scheduled(self, level, market_state: MarketState,
                        timestamp: pd.Timestamp) -> dict:
         """
         method to send market orders to stay on the planed schedule
@@ -102,22 +104,21 @@ class Schedule:
             pd.Timestamp, moment of method call usually called out of on_time
         """
 
-        if np.all(self.meta_schedule[self.meta_schedule.index < timestamp]):
+        if np.all(self.meta_schedule[self.meta_schedule.index < timestamp]) and level > 0:
             if self.parent_order.side == 'buy':
-                limit = market_state.best_ask
+                limit = None # market_state.best_ask
             else:
-                limit = market_state.best_bid
+                limit = None # market_state.best_bid
         else:
             limit = None
             self.meta_schedule[self.meta_schedule.index < timestamp] = True
 
         output = None
         if self.parent_order.active:
-            orders_to_fill = self.scheduling[self.scheduling['timestamp']
-                                             < timestamp]
+            orders_to_fill = self.scheduling[self.scheduling['timestamp']<= timestamp]
             if orders_to_fill['volume'].sum() > 0:
                 output = {
-                    'symbol': self.parent_order.symbol,
+                    'symbol': self.parent_order.market_id,
                     'limit': limit,
                     'side': self.parent_order.side,
                     'quantity': int(orders_to_fill['volume'].sum()),
@@ -139,7 +140,7 @@ class Schedule:
             elif vol > reduce_volume:
                 self.scheduling.loc[index, 'volume'] -= reduce_volume
                 reduce_volume = 0
-    
+
     def get_outstanding(self, timestamp) -> float:
         if self.scheduling[self.scheduling['timestamp']
                            < timestamp].index.empty:
@@ -148,3 +149,10 @@ class Schedule:
             ind = max(self.scheduling[self.scheduling['timestamp']
                                       < timestamp].index)+1
         return self.scheduling.loc[:ind, 'volume'].sum()
+    
+    def get_left_window_time(self, timestamp:pd.Timestamp) -> pd.Timedelta:
+        next_times = self.scheduling.loc[self.scheduling['timestamp']>timestamp,'timestamp'].to_list()
+        if len(next_times)<1:
+            return pd.Timedelta(value=10, unit='seconds')
+        else:
+            return next_times[0]-timestamp

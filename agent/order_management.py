@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import numpy as np
 from typing import Tuple, TYPE_CHECKING
+import os
 
 # project imports
 from agent.parent_order import ParentOrder
@@ -21,12 +22,35 @@ class OrderManagementSystem:
         self.stock_list = stock_list
         self.agent = agent
         self.parent_orders = {stock: [] for stock in self.stock_list}
-        self.order_stats = pd.DataFrame({'key':[],'time':[],'volume':[],'price':[],'midpoint':[],'vwap':[],'market_vwap':[],'twap':[],'market_twap':[]})
-        self.stats_path = './agent/save_games/mapping.csv'
         self.save_path = './agent/save_games/'
-        self.stats_mapping = pd.read_csv(self.stats_path, index_col=None)
+        self.stats_mapping = pd.DataFrame({
+                                            'key':[],
+                                            'stock':[],
+                                            'time_window':[],
+                                            'child_window':[],
+                                            'agent':[],
+                                            'side':[],
+                                            'volume':[],
+                                            'abs_vol':[]
+                                        })
         self.initialized = False
         self.support = agent.support
+        self.order_stats = pd.DataFrame({
+                                        'key': [],
+                                        'time': [],
+                                        'volume': [],
+                                        'price': [],
+                                        'midpoint': [],
+                                        'vwap': [],
+                                        'market_vwap': [],
+                                        'twap': [],
+                                        'market_twap': []})
+
+    def save_stats(self):
+        dir_list = os.listdir(self.save_path+'mappings/')
+        self.stats_mapping.to_csv(self.save_path+'mappings/mapping'+str(len(dir_list))+'.csv', index=False)
+        self.order_stats.to_csv(
+            self.save_path+'save_games_'+str(len(dir_list))+'.csv', index=False)
 
     def check_status_on_time(self, timestamp: pd.Timestamp) -> None:
         """
@@ -61,75 +85,30 @@ class OrderManagementSystem:
 
     def order_filled(self, parent: ParentOrder, timestamp: pd.Timestamp):
         # save stats: append to order_stats dataframe; append row in mapping table first for new key
-        key = self.stats_mapping['key'].to_list()[-1]+1
+        if self.stats_mapping.empty:
+            key = 0
+        else:
+            key = self.stats_mapping['key'].to_list()[-1]+1
         self.stats_mapping = pd.concat([self.stats_mapping, pd.DataFrame({
-            'key':[key],
-            'stock':[parent.symbol],
-            'window':[self.agent.time_window],
-            'childwindow':[self.agent.child_window],
+            'key': [key],
+            'stock':[parent.market_id],
+            'time_window':[self.agent.time_window],
+            'child_window':[self.agent.child_window],
             'agent':[self.agent.level],
-            'volume':[self.agent.vol_range],
-            'abs_vol':[parent.volume],
-            'testing':[1]
+            'side':[parent.side],
+            'volume':[self.agent.relalitve_volume],
+            'abs_vol':[parent.volume]
         })])
         tmp_df = parent.stats.copy()
         tmp_df['key'] = [key for _ in range(len(tmp_df))]
-        self.order_stats = pd.concat([self.order_stats,tmp_df])
-        orders = self.agent.market_interface.get_filtered_orders(parent.symbol, status="ACTIVE")
+        self.order_stats = pd.concat([self.order_stats, tmp_df])
+        orders = self.agent.market_interface.get_filtered_orders(
+            parent.market_id, status="ACTIVE")
         for order in orders:
             if order.limit is not None:
                 self.agent.market_interface.cancel_order(order)
         print('parant order completed')
-        self.generate_parent_order(parent.symbol, timestamp)
-
-    def save_stats(self):
-        self.stats_mapping.to_csv(self.stats_path, index=False)
-        k_start = self.order_stats['key'].min()
-        k_end = self.order_stats['key'].max()
-        self.order_stats.to_csv(self.save_path+'save_games_'+str(k_start)+'_'+str(k_end)+'.csv', index=False)
-
-    @staticmethod
-    def get_order_book_position(market_state: MarketState, order: Order):
-        """
-        method wich returns relative queue position of an order on a
-        limit level
-
-        :param market_state:
-            MarketState, returned by the market_interface
-        :param order:
-            Order, order created through submit_order
-        """
-        if order.status == 'ACTIVE':
-            limit = order.limit
-            time = order.timestamp
-            side = order.side
-            buy_dict, sell_dict = market_state.state
-            position = 0
-            volume = 0
-            last = True
-            if side == 'buy':
-                try:
-                    level = buy_dict[limit]
-                except KeyError:
-                    return 0.0
-            else:
-                try:
-                    level = sell_dict[limit]
-                except KeyError:
-                    return 0.0
-            for order_ in level:
-                volume += order_[1]
-                if order_[0] > time and last:
-                    last = False
-                    position = volume
-            if last:
-                position = volume
-            if volume == 0:
-                return 0.0
-            else:
-                return position/volume
-        else:
-            return None
+        self.generate_parent_order(parent.market_id, timestamp)
 
     def generate_parent_order(self, market_id: str,
                               timestamp: pd.Timestamp) -> None:
@@ -149,7 +128,7 @@ class OrderManagementSystem:
         volume_avg = self.support.get_daily_volume(market_id)
         self.parent_orders[market_id].append(
             ParentOrder(timestamp,
-                        self.agent.vol_range,
+                        self.agent.relalitve_volume,
                         market_id,
                         volume_avg,
                         self.agent.time_window,
@@ -157,7 +136,7 @@ class OrderManagementSystem:
                         self.agent.child_window,
                         volume_pattern))
 
-    def update_vwap(self, market_id: str, trades_state: pd.Series) -> None:
+    def update_AP_metrics(self, market_id: str, trades_state: pd.Series) -> None:
         """
         method to update the vwap of a parent order of the corresponding stock
 
@@ -167,9 +146,10 @@ class OrderManagementSystem:
         :param trades_state:
             pd.Timestamp, timestamp of the moment the method is called
         """
-        if self.parent_orders[market_id][-1].active:
-            self.parent_orders[market_id][-1].actualize_market_vwap(
-                trades_state)
+        order = self.get_recent_parent_order(market_id)
+        if order.active:
+            order.actualize_market_vwap(trades_state)
+            order.actualize_market_twap(trades_state)
 
     def set_midpoint(self, market_id, book_state: pd.Series):
         self.parent_orders[market_id][-1].set_last_midpoint(
@@ -205,7 +185,7 @@ class OrderManagementSystem:
         for market_id in self.stock_list:
             market_state = market_states[market_id]
             parent = self.get_recent_parent_order(market_id)
-            scheduling_order = parent.schedule.stay_scheduled(market_state,
+            scheduling_order = parent.schedule.stay_scheduled(self.agent.level, market_state,
                                                               timestamp)
             if scheduling_order is not None:
                 parent_list.append(parent)

@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # general imports
+from turtle import up
 import pandas as pd
 import re
 
@@ -14,7 +15,7 @@ from agent.order_management import OrderManagementSystem
 
 class Agent(BaseAgent):
 
-    def __init__(self, name, identifies, *args, **kwargs):
+    def __init__(self, name, identifies, rel_vol, t_window, c_window, level, *args, **kwargs):
         """
         Trading agent implementation.
 
@@ -63,6 +64,12 @@ class Agent(BaseAgent):
         """
         super(Agent, self).__init__(name, *args, **kwargs)
 
+        # static parameter set
+        self.relalitve_volume = rel_vol     # percent of daily vol
+        self.time_window = t_window         # hours
+        self.child_window = c_window        # minutes
+        self.level = level                  # agent level
+        
         # extract stock list out of identifier list
         self.stock_list = []
         for val in identifies:
@@ -71,17 +78,11 @@ class Agent(BaseAgent):
                 self.stock_list.append(stock)
 
         # Decision support
-        self.support = DecisionSupport(self.stock_list, None)
+        self.support = DecisionSupport(self.stock_list, self)
 
         # variable parameter set
         self.order_management = OrderManagementSystem(self.stock_list, self)
         self.check_status = None
-
-        # static parameter set
-        self.vol_range = [0.05, 0.06]    # percent of daily vol
-        self.time_window = 1             # hours
-        self.child_window = 2            # minutes TODO: maybe dynamic per stock
-        self.level = 0
 
     def on_quote(self, market_id: str, book_state: pd.Series):
         """
@@ -95,8 +96,9 @@ class Agent(BaseAgent):
         """
         if self.order_management.initialized:
             if self.order_management.get_recent_parent_order(market_id).active:
-                self.update_limit_order(market_id, book_state['TIMESTAMP_UTC'],
-                                        book_state)
+                if self.level > 0:
+                    self.update_limit_order(market_id, book_state['TIMESTAMP_UTC'],
+                                            book_state)
                 self.order_management.set_midpoint(market_id, book_state)
 
     def on_trade(self, market_id: str, trades_state: pd.Series):
@@ -111,10 +113,10 @@ class Agent(BaseAgent):
         """
 
         # calculate vwap for active order
-        self.order_management.update_vwap(market_id, trades_state)
+        self.order_management.update_AP_metrics(market_id, trades_state)
 
     def on_time(self, timestamp: pd.Timestamp, timestamp_next: pd.Timestamp):
-        """
+        """ 
         This method is called with every iteration and provides the timestamps
         for both current and next iteration. The given interval may be used to
         submit orders before a specific point in time.
@@ -131,7 +133,7 @@ class Agent(BaseAgent):
         # check every minute if orders are outdated
         # check if they are in their schedule
         if self.check_status is None \
-                or self.check_status + pd.DateOffset(minutes=1) < timestamp:
+                or self.check_status + pd.DateOffset(seconds=20) < timestamp:
             self.check_status = timestamp
             self.order_management.check_status_on_time(timestamp)
             parents, scheduling_orders = self.order_management.stay_scheduled(
@@ -152,42 +154,32 @@ class Agent(BaseAgent):
         method to send limit orders to the market,
         dependent on the agent strategy
         """
-        orders = self.market_interface.get_filtered_orders(market_id,
-                                                           status="ACTIVE")
-        limit_order = False
-        create_new_order = False
-        for order in orders:
-            if order.limit is not None:
-                limit_order = True
-                if self.support.update_needed(market_state, order, timestamp):
-                    self.market_interface.cancel_order(order)
-                    create_new_order = True
+        orders_all = self.market_interface.get_filtered_orders(market_id, status="ACTIVE")
+        parent_order = self.order_management.get_recent_parent_order(market_id)        
+        orders = []
 
-        if not limit_order or create_new_order:
-            parent_order = \
-                self.order_management.get_recent_parent_order(market_id)
+        for order in orders_all:
+            if order.limit is not None:
+                orders.append(order)
+        cancel, submit = self.support.update_needed(market_state, parent_order, orders)
+
+        for c_order in cancel:
+            self.market_interface.cancel_order(c_order)
+
+        for s_order in submit:
             if parent_order.schedule.get_outstanding(timestamp) > 0:
                 parent_order.child_orders.append(
                     self.market_interface.submit_order(
                         market_id=market_id,
                         side=parent_order.side,
-                        quantity=parent_order.schedule.get_outstanding(
-                            timestamp),
-                        limit=self.support.determinate_price(market_state,
-                                                             parent_order),
+                        quantity=s_order[1],
+                        limit=s_order[0],
                         parent=parent_order
                     )
                 )
 
     def save_stats(self):
         self.order_management.save_stats()
-
-    def update_schedule(self, parent_order):
-        """
-        method that allows more flexible scheduling,
-        like front and back loading
-        """
-        pass
 
 
 if __name__ == "__main__":
@@ -196,9 +188,9 @@ if __name__ == "__main__":
 
     identifier_list = [
         # ADIDAS
-        # "Adidas.BOOK", "Adidas.TRADES",
+        "Adidas.BOOK", "Adidas.TRADES",
         # ALLIANZ
-        # "Allianz.BOOK", "Allianz.TRADES",
+        "Allianz.BOOK", "Allianz.TRADES",
         # BASF
         # "BASF.BOOK", "BASF.TRADES",
         # Bayer
@@ -220,7 +212,7 @@ if __name__ == "__main__":
     # TODO: INSTANTIATE AGENT. Please refer to the corresponding file for more
     # information.
 
-    agent = Agent(name="test_agent", identifies=identifier_list)
+    agent = Agent(name="test_agent", identifies=identifier_list, rel_vol=0.05, t_window=1, c_window=2, level=0)
 
     # TODO: INSTANTIATE BACKTEST. Please refer to the corresponding file for
     # more information.
@@ -259,7 +251,7 @@ if __name__ == "__main__":
     # list a tuple (episode_start_buffer, episode_start, episode_end) for each
     # episode
     backtest.run_episode_list(identifier_list=identifier_list, episode_list=[
-        ("2021-01-04T08:00:00", "2021-01-04T08:15:00", "2021-01-04T16:30:00"),
+        ("2021-01-04T08:00:00", "2021-01-04T08:15:00", "2021-01-04T09:20:00"),
         #  ...
     ],
     )
