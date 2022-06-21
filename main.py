@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 
 # general imports
-from turtle import up
 import pandas as pd
 import re
+import sys
 
 # project imports
 from agent.agent import BaseAgent
@@ -212,7 +212,11 @@ if __name__ == "__main__":
     # TODO: INSTANTIATE AGENT. Please refer to the corresponding file for more
     # information.
 
-    agent = Agent(name="test_agent", identifies=identifier_list, rel_vol=0.05, t_window=1, c_window=2, level=0)
+    rel_vol = float(sys.argv[1])
+    t_window = int(sys.argv[2])
+    level = int(sys.argv[3])
+
+    agent = Agent(name="test_agent", identifies=identifier_list, rel_vol=rel_vol, t_window=t_window, c_window=2, level=level)
 
     # TODO: INSTANTIATE BACKTEST. Please refer to the corresponding file for
     # more information.
