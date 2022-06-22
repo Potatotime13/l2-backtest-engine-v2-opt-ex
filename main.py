@@ -62,6 +62,9 @@ class Agent(BaseAgent):
         :param name:
             str, agent name
         """
+        self.reset(name, identifies, rel_vol, t_window, c_window, level, *args, **kwargs)
+    
+    def reset(self, name, identifies, rel_vol, t_window, c_window, level, *args, **kwargs):
         super(Agent, self).__init__(name, *args, **kwargs)
 
         # static parameter set
@@ -69,9 +72,10 @@ class Agent(BaseAgent):
         self.time_window = t_window         # hours
         self.child_window = c_window        # minutes
         self.level = level                  # agent level
-        
+
         # extract stock list out of identifier list
         self.stock_list = []
+        self.identifies = identifies
         for val in identifies:
             stock = re.split(r'\.(?!\d)', val)[0]
             if len(self.stock_list) == 0 or self.stock_list[-1] != stock:
@@ -154,14 +158,16 @@ class Agent(BaseAgent):
         method to send limit orders to the market,
         dependent on the agent strategy
         """
-        orders_all = self.market_interface.get_filtered_orders(market_id, status="ACTIVE")
-        parent_order = self.order_management.get_recent_parent_order(market_id)        
+        orders_all = self.market_interface.get_filtered_orders(
+            market_id, status="ACTIVE")
+        parent_order = self.order_management.get_recent_parent_order(market_id)
         orders = []
 
         for order in orders_all:
             if order.limit is not None:
                 orders.append(order)
-        cancel, submit = self.support.update_needed(market_state, parent_order, orders)
+        cancel, submit = self.support.update_needed(
+            market_state, parent_order, orders)
 
         for c_order in cancel:
             self.market_interface.cancel_order(c_order)
@@ -188,35 +194,41 @@ if __name__ == "__main__":
 
     identifier_list = [
         # ADIDAS
-        "Adidas.BOOK", "Adidas.TRADES",
+        #"Adidas.BOOK", "Adidas.TRADES",
         # ALLIANZ
-        "Allianz.BOOK", "Allianz.TRADES",
+        #"Allianz.BOOK", "Allianz.TRADES",
         # BASF
-        # "BASF.BOOK", "BASF.TRADES",
+        #"BASF.BOOK", "BASF.TRADES",
         # Bayer
-        # "Bayer.BOOK", "Bayer.TRADES",
+        #"Bayer.BOOK", "Bayer.TRADES",
         # BMW
-        # "BMW.BOOK", "BMW.TRADES",
+        #"BMW.BOOK", "BMW.TRADES",
         # Continental
-        # "Continental.BOOK", "Continental.TRADES",
+        #"Continental.BOOK", "Continental.TRADES",
         # Covestro
-        # "Covestro.BOOK", "Covestro.TRADES",
+        #"Covestro.BOOK", "Covestro.TRADES",
         # Daimler
         "Daimler.BOOK", "Daimler.TRADES",
         # Deutsche Bank
-        # "DeutscheBank.BOOK", "DeutscheBank.TRADES",
+        #"DeutscheBank.BOOK", "DeutscheBank.TRADES",
         # DeutscheBörse
-        # "DeutscheBörse.BOOK", "DeutscheBörse.TRADES",
+        #"DeutscheBörse.BOOK", "DeutscheBörse.TRADES",
     ]
 
     # TODO: INSTANTIATE AGENT. Please refer to the corresponding file for more
     # information.
 
-    rel_vol = float(sys.argv[1])
-    t_window = int(sys.argv[2])
-    level = int(sys.argv[3])
+    rel_vol = 0.05
+    t_window = 1
+    level = 0
 
-    agent = Agent(name="test_agent", identifies=identifier_list, rel_vol=rel_vol, t_window=t_window, c_window=2, level=level)
+    if len(sys.argv) > 1:
+        rel_vol = float(sys.argv[1])
+        t_window = int(sys.argv[2])
+        level = int(sys.argv[3])
+
+    agent = Agent(name="test_agent", identifies=identifier_list,
+                  rel_vol=rel_vol, t_window=t_window, c_window=2, level=level)
 
     # TODO: INSTANTIATE BACKTEST. Please refer to the corresponding file for
     # more information.
@@ -255,7 +267,8 @@ if __name__ == "__main__":
     # list a tuple (episode_start_buffer, episode_start, episode_end) for each
     # episode
     backtest.run_episode_list(identifier_list=identifier_list, episode_list=[
-        ("2021-01-04T08:00:00", "2021-01-04T08:15:00", "2021-01-04T09:20:00"),
+        ("2021-02-01T08:00:00", "2021-02-01T08:15:00", "2021-02-01T09:20:00"),
+        ("2021-02-02T08:00:00", "2021-02-02T08:15:00", "2021-02-02T09:20:00"),
         #  ...
     ],
     )

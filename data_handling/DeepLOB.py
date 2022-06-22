@@ -7,8 +7,8 @@ import keras as keras
 from keras import backend as K
 import tensorflow_addons as tfa
 
-from data_handling.handle_data import get_file_names, get_raw_book, get_dirlist, get_trades
-
+#from data_handling.handle_data import get_file_names, get_raw_book, get_dirlist, get_trades
+from handle_data import get_file_names, get_raw_book, get_dirlist, get_trades
 
 def compress_book(data: pd.DataFrame, timedelta: pd.Timedelta = pd.Timedelta(microseconds=10000)):
     data = data.copy().reset_index()
@@ -102,9 +102,6 @@ def label_and_normalize(data: np.array, label_steps=[200, 400, 500, 700, 1000], 
 
 
 def label_up_down(data: np.array, label_steps=[200, 400, 500, 700, 1000], classes=2, window=500):
-    std = np.std(data, axis=0)
-    mean = np.mean(data, axis=0)
-    standardized = (data-mean)/std
     midpoints = np.mean(data[:, [0, 2]], axis=1)
     labels = np.zeros((len(midpoints), len(label_steps), classes))
     decoder_input_data = np.zeros((len(data), 1, classes))
@@ -121,7 +118,7 @@ def label_up_down(data: np.array, label_steps=[200, 400, 500, 700, 1000], classe
             decoder_input_data[i, 0, 0] = 1.
         else:
             decoder_input_data[i, 0, 1] = 1.
-    return standardized[:-label_steps[-1], :], labels[:-label_steps[-1], :, :], decoder_input_data[:-label_steps[-1], :, :]
+    return data[:-label_steps[-1], :].copy(), labels[:-label_steps[-1], :, :], decoder_input_data[:-label_steps[-1], :, :]
 
 
 def label_exec_prob(book: pd.DataFrame, trades: pd.DataFrame, label_steps=[200, 400, 500, 700, 1000], window=500):
@@ -171,9 +168,6 @@ def label_exec_prob(book: pd.DataFrame, trades: pd.DataFrame, label_steps=[200, 
 
 
 def label_intensity(data: np.array, label_steps=[200, 400, 500, 700, 1000], window=500):
-    std = np.std(data, axis=0)
-    mean = np.mean(data, axis=0)
-    standardized = (data-mean)/std
     midpoints = np.mean(data[:, [0, 2]], axis=1)
     labels = np.zeros((len(midpoints), len(label_steps), 1))
     decoder_input_data = np.zeros((len(data), 1, 1))
@@ -184,10 +178,10 @@ def label_intensity(data: np.array, label_steps=[200, 400, 500, 700, 1000], wind
         for index, steps in enumerate(label_steps):
             delta = abs(np.mean(midpoints[i+1:i+steps+1]/midpoints[i]-1))
             if decoder_delta > 0:
-                labels[i, index, 0] = delta/(2*decoder_delta)
+                labels[i, index, 0] = min(delta/(2*decoder_delta),1)
             else:
                 labels[i, index, 0] = 0
-    return standardized[:-label_steps[-1], :], labels[:-label_steps[-1], :, :], decoder_input_data[:-label_steps[-1], :, :]
+    return data[:-label_steps[-1], :].copy(), labels[:-label_steps[-1], :, :], decoder_input_data[:-label_steps[-1], :, :]
 
 
 class Data_Generator(tf.keras.utils.Sequence):
@@ -206,13 +200,27 @@ class Data_Generator(tf.keras.utils.Sequence):
         self.labels_size = labels.shape[1:]
         self.shuffle = shuffle
         self.n = len(self.en_inputs)
-        self.rand_ind = np.random.permutation(
-            int((self.n-self.window)/(self.window/self.overlap)))
+        if self.shuffle:
+            self.rand_ind = np.random.permutation(
+                int((self.n-self.window)/(self.window/self.overlap)))
+        else:
+            self.rand_ind = np.arange(int((self.n-self.window)/(self.window/self.overlap)))
 
     def on_epoch_end(self):
         if self.shuffle:
             self.rand_ind = np.random.permutation(
                 int((self.n-self.window)/(self.window/self.overlap)))
+        else:
+            self.rand_ind = np.arange(int((self.n-self.window)/(self.window/self.overlap)))
+
+    def normalize_window(self, input):
+        # normalize with min max in window
+        data = input.copy()
+        data[:,0::2] = data[:,0::2]-np.min(data[:,0::2])
+        data[:,1::2] = data[:,1::2]-np.min(data[:,1::2])
+        data[:,0::2] = data[:,0::2]/np.max(data[:,0::2])
+        data[:,1::2] = data[:,1::2]/np.max(data[:,1::2])
+        return data
 
     def __getitem__(self, index):
         start_ind = self.rand_ind[index:index+self.batch_size]
@@ -221,7 +229,7 @@ class Data_Generator(tf.keras.utils.Sequence):
         y = np.zeros((self.batch_size,)+self.labels_size)
         for i, ind in enumerate(start_ind):
             ind_ = ind * int(self.window/self.overlap)
-            x_1[i, :, :, 0] = self.en_inputs[ind_:ind_+self.window, :]
+            x_1[i, :, :, 0] = self.normalize_window(self.en_inputs[ind_:ind_+self.window, :])
             x_2[i, :, :] = self.de_inputs[ind_+self.window-1, :, :]
             y[i, :, :] = self.labels[ind_+self.window-1, :, :]
         return [x_1, x_2], y
@@ -332,27 +340,46 @@ def get_model_attention(latent_dim, window, num_steps, classes=3, fin_act='softm
     model = keras.models.Model([input_train, decoder_inputs], decoder_outputs)
     return model
 
+def score_midpoint(model1, model2, en_input, de_inputs1, labels1, de_inputs2, labels2, split):
+    midpoints = np.mean(en_input[split:, [0, 2]], axis=1)
+    val_gen1 = Data_Generator(en_inputs[split:], de_inputs1[split:], labels1[split:], batch_size, window_size, overlap=1, shuffle=False)
+    val_gen2 = Data_Generator(en_inputs[split:], de_inputs2[split:], labels2[split:], batch_size, window_size, overlap=1, shuffle=False)
+    pred1 = model1.predict(val_gen1)
+    pred2 = model2.predict(val_gen2)
+    score = (pred1[:,4,0]-pred1[:,4,1])*pred2[:,4,0]
+
+    return score, midpoints
+
+
 
 if __name__ == '__main__':
-    # , 'Allianz','BASF' 'Bayer', 'BMW', 'Continental','Covestro', 'Covestro', 'Daimler', 'DeutscheBank', 'DeutscheBörse'
-    stock_list = ['Daimler', ]
-    window_size = 500
+    # Adidas, 'Allianz','BASF' 'Bayer', 'BMW', 'Continental','Covestro', 'Covestro', 'Daimler', 'DeutscheBank', 'DeutscheBörse'
+    mode = 'direction'
+    stock_list = ['DeutscheBank', ]
+    window_size = 200
     batch_size = 32
-    model = get_model_attention(32, window_size, 5, classes=2)
-    model.compile(loss='categorical_crossentropy', metrics=[keras.metrics.CategoricalAccuracy(
-    ), keras.metrics.Recall(), tf.keras.metrics.Precision()], optimizer='adam')
-    data = get_combined_book(stock_list, days=30)
+    if mode=='direction':
+        model = get_model_attention(32, window_size, 5, classes=2)
+        model.compile(loss='categorical_crossentropy', metrics=[keras.metrics.CategoricalAccuracy(
+        ), keras.metrics.Recall(), tf.keras.metrics.Precision()], optimizer='adam')    
+    else:
+        model = get_model_attention(32, window_size, 5, classes=1, fin_act='relu')
+        model.compile(loss='mean_absolute_error', optimizer='adam')
+    data = get_combined_book(stock_list, days=10)
 
     for _ in range(1):
         for data_ in data:
-            en_inputs, labels, de_inputs = label_up_down(data_.to_numpy())
+            if mode=='direction':
+                en_inputs, labels, de_inputs = label_up_down(data_.to_numpy())
+            else:
+                en_inputs, labels, de_inputs = label_intensity(data_.to_numpy())
             print(np.mean(labels, axis=0))
             split = int(len(en_inputs)*0.8)
             train_gen = Data_Generator(
                 en_inputs[:split], de_inputs[:split], labels[:split], batch_size, window_size, overlap=1)
             val_gen = Data_Generator(
                 en_inputs[split:], de_inputs[split:], labels[split:], batch_size, window_size, overlap=1)
-            model.fit(train_gen, validation_data=val_gen, epochs=1)
+            model.fit(train_gen, validation_data=val_gen, epochs=3)
 
 '''
 Training history:

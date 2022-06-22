@@ -627,6 +627,14 @@ class Backtest:
         # save report
         self.result_list.append(result)
         self.agent.save_stats()
+        self.agent.reset(
+            self.agent.name,
+            self.agent.identifies,
+            self.agent.relalitve_volume,
+            self.agent.time_window,
+            self.agent.child_window,
+            self.agent.level
+        )
         # reset agent ---
 
         # ...

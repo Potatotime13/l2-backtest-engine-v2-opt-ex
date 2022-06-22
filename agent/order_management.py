@@ -19,6 +19,9 @@ if TYPE_CHECKING:
 class OrderManagementSystem:
 
     def __init__(self, stock_list: list, agent: Agent, ) -> None:
+        self.reset(stock_list, agent)
+    
+    def reset(self, stock_list, agent):
         self.stock_list = stock_list
         self.agent = agent
         self.parent_orders = {stock: [] for stock in self.stock_list}
@@ -49,8 +52,10 @@ class OrderManagementSystem:
     def save_stats(self):
         dir_list = os.listdir(self.save_path+'mappings/')
         self.stats_mapping.to_csv(self.save_path+'mappings/mapping'+str(len(dir_list))+'.csv', index=False)
-        self.order_stats.to_csv(
-            self.save_path+'save_games_'+str(len(dir_list))+'.csv', index=False)
+        self.order_stats.to_csv(self.save_path+'save_games_'+str(len(dir_list))+'.csv', index=False)
+        # reset order and statistics
+        self.reset(self.stock_list, self.agent)
+
 
     def check_status_on_time(self, timestamp: pd.Timestamp) -> None:
         """

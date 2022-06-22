@@ -94,6 +94,7 @@ class Schedule:
                             len(time_stamps)//abs(vol_left))] -= 1 
         self.scheduling = pd.DataFrame({'timestamp': time_stamps,
                                         'volume': volumes.tolist()})
+        print(self.scheduling)
 
     def stay_scheduled(self, level, market_state: MarketState,
                        timestamp: pd.Timestamp) -> dict:

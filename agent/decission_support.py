@@ -8,7 +8,6 @@ from typing import Union, TYPE_CHECKING, List
 
 # project imports
 from env.market import Order
-from data_handling.ai_letsgo import everknowing_entity
 
 # quality of life imports
 if TYPE_CHECKING:
@@ -16,15 +15,12 @@ if TYPE_CHECKING:
     from main import Agent
     from env.market import MarketState
 
-# TODO Prüfen, ob das einen Fehler gibt.
-# Alter name war Decission_support()
-
 
 class DecisionSupport:
 
     def __init__(self, stock_list, agent: Agent) -> None:
-        self.ml_model_a = None
-        self.ml_model_b = None
+        self.ml_direction = {stock:None for stock in stock_list}
+        self.ml_intensity = {stock:None for stock in stock_list}
         self.agent = agent
         self.stock_list = stock_list
         self.vol_dist = pd.read_csv(
@@ -37,10 +33,24 @@ class DecisionSupport:
     def get_volume_distribution(self, stock: str, timestamp: pd.Timestamp,
                                 window: int) -> list:
         if self.agent.level > 0:
-            hour = timestamp.hour-8
-            return self.vol_dist.loc[hour:hour+window, stock].astype(int)
+            hour = timestamp.hour
+            min = timestamp.minute
+            c_window = self.agent.child_window
+            trades = self.minute_vol[stock].copy()
+            return self.summary_to_dist(trades,window,c_window,hour,min)
         else:
             return [1]
+
+    def summary_to_dist(self, trades, window, c_window, hour, min):
+        data = trades.iloc[:,:22].groupby(['21','20']).sum()
+        data = data.sum(axis=1)
+        data = data[(hour,min):(hour+window,min)]
+        print(data)
+        w = 2*c_window
+        dist = []
+        for i in range(len(data)//w):
+            dist.append(int(np.sum(data[w*i:w*(i+1)])))
+        return dist
 
     def get_daily_volume(self, stock):
         return self.vol_dist.mean()[stock]
@@ -63,18 +73,20 @@ class DecisionSupport:
 
     def get_strat(self, market_state: pd.Series, p_order: ParentOrder, orders: list[Order]) -> np.array:
         midpoint = np.mean(market_state.loc[['L1-BidPrice', 'L1-AskPrice']])
-        opt_level, side_name, new_score = self.determinate_price(
-            market_state, p_order, midpoint)
+        side_name = 'Bid' if p_order.side == 'buy' else 'Ask'
+        window_left = max(p_order.schedule.get_left_window_time(market_state['TIMESTAMP_UTC']).total_seconds()//60+1, 1)
         volume = p_order.schedule.get_outstanding(market_state['TIMESTAMP_UTC'])
-        opt_level = self.current_best_order(orders, (opt_level, volume), p_order, market_state, midpoint, new_score)
-        print(opt_level)
+        volume = int(volume / window_left)
+        opt_level, new_score = self.determinate_price(market_state, p_order, midpoint, 1, volume)
+        opt_level = self.current_best_order(orders, (opt_level, volume), p_order, market_state, midpoint, new_score, 1)
+
         if volume > 0:
             strat = [[market_state['L'+str(level)+'-'+side_name+'Price'], volume]
-                     for level in range(opt_level, min(opt_level+5,10))]
+                     for level in range(opt_level, min(opt_level+3,10))]
         else:
             opt_level += 2
             strat = [[market_state['L'+str(level)+'-'+side_name+'Price'], volume]
-                     for level in range(opt_level, min(opt_level+5,10))]
+                     for level in range(opt_level, min(opt_level+3,10))]
         return np.array(strat)
 
     def match_strat(self, orders: List[Order], strat: np.array, side: str) -> tuple(list, list):
@@ -97,15 +109,13 @@ class DecisionSupport:
             fullfill = strat[:, 1] > 0
         return cancelations, strat[fullfill, :].tolist()
 
-    def determinate_price(self, market_state, p_order: ParentOrder, midpoint: float):
+    def determinate_price(self, market_state, p_order: ParentOrder, midpoint: float, window_left, volume):
         if self.agent.level == 1:
             df = self.minute_vol[p_order.market_id].copy()
             timestamp = market_state['TIMESTAMP_UTC']
             hour = timestamp.hour
-            window_left = max(p_order.schedule.get_left_window_time(
-                timestamp).total_seconds()//60+1, 1)
-            side_name = 'Bid' if p_order.side == 'buy' else 'Ask'
-            volume = p_order.schedule.get_outstanding(timestamp)
+
+            
             if p_order.side == 'buy':
                 volume_to_fill = volume + market_state.to_numpy()[2::4]
                 prob = self.new_prob(df, 0, volume_to_fill, hour, window_left)
@@ -116,17 +126,16 @@ class DecisionSupport:
                 price = market_state.to_numpy()[3::4]
             score = self.get_score(midpoint, price, prob, volume, p_order.side)
             level = np.argmax(score)+1
-            return level, side_name, np.max(score)
+            return level, np.max(score)
 
         elif self.agent.level == 2:
             return None
 
-    def current_best_order(self, orders: list[Order], new_order, p_order: ParentOrder, market_state: pd.Series, midpoint, new_score):
+    def current_best_order(self, orders: list[Order], new_order, p_order: ParentOrder, market_state: pd.Series, midpoint, new_score, window_left):
         if len(orders)>0:
             df = self.minute_vol[p_order.market_id].copy()
             timestamp = market_state['TIMESTAMP_UTC']
             hour = timestamp.hour
-            window_left = max(p_order.schedule.get_left_window_time(timestamp).total_seconds()//60+1, 1)
             prices = market_state.iloc[np.arange(1, 40, 2)]
             level = []
             vol_queue = []
@@ -258,19 +267,8 @@ class DecisionSupport:
         limit = 2
         return limit
 
-    @staticmethod
-    def get_alpha(side, stock, book_state):
-        timestamp = book_state['TIMESTAMP_UTC']
-        direction = everknowing_entity(timestamp, stock, 500)
-        # edge would be the standard deviation used for the label
-        if side == 'sell':
-            alpha = direction * -1
-        else:
-            alpha = direction
-        return alpha
-
     def get_intensity(self):
         pass
 
-    def get_execution_prob(self):
+    def get_direction(self):
         pass
