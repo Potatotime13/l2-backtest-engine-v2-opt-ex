@@ -3,4 +3,5 @@ __pycache__/
 .DS_Store
 .idea/
 data/
+save_games/*.csv
 _data_old/
