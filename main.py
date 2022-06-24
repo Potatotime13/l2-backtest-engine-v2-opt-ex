@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 
 # general imports
+import tensorflow as tf
+import keras as keras
+from keras import backend as K
 import pandas as pd
 import re
 import sys
@@ -173,7 +176,7 @@ class Agent(BaseAgent):
             self.market_interface.cancel_order(c_order)
 
         for s_order in submit:
-            if parent_order.schedule.get_outstanding(timestamp) > 0:
+            if parent_order.volume_left > 0:
                 parent_order.child_orders.append(
                     self.market_interface.submit_order(
                         market_id=market_id,
@@ -196,7 +199,7 @@ if __name__ == "__main__":
         # ADIDAS
         #"Adidas.BOOK", "Adidas.TRADES",
         # ALLIANZ
-        #"Allianz.BOOK", "Allianz.TRADES",
+        "Allianz.BOOK", "Allianz.TRADES",
         # BASF
         #"BASF.BOOK", "BASF.TRADES",
         # Bayer
@@ -208,7 +211,7 @@ if __name__ == "__main__":
         # Covestro
         #"Covestro.BOOK", "Covestro.TRADES",
         # Daimler
-        "Daimler.BOOK", "Daimler.TRADES",
+        #"Daimler.BOOK", "Daimler.TRADES",
         # Deutsche Bank
         #"DeutscheBank.BOOK", "DeutscheBank.TRADES",
         # DeutscheBörse
@@ -220,7 +223,7 @@ if __name__ == "__main__":
 
     rel_vol = 0.05
     t_window = 1
-    level = 0
+    level = 1
 
     if len(sys.argv) > 1:
         rel_vol = float(sys.argv[1])
@@ -229,7 +232,7 @@ if __name__ == "__main__":
         day = int(sys.argv[4])
 
     agent = Agent(name="test_agent", identifies=identifier_list,
-                  rel_vol=rel_vol, t_window=t_window, c_window=2, level=level)
+                  rel_vol=rel_vol, t_window=t_window, c_window=10, level=level)
 
     # TODO: INSTANTIATE BACKTEST. Please refer to the corresponding file for
     # more information.

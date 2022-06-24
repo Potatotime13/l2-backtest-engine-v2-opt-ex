@@ -5,10 +5,13 @@ from tqdm import tqdm
 import tensorflow as tf
 import keras as keras
 from keras import backend as K
-import tensorflow_addons as tfa
+import matplotlib.pyplot as plt
+from sklearn.metrics import accuracy_score, classification_report
+import logging
 
-#from data_handling.handle_data import get_file_names, get_raw_book, get_dirlist, get_trades
-from handle_data import get_file_names, get_raw_book, get_dirlist, get_trades
+from data_handling.handle_data import get_file_names, get_raw_book, get_dirlist, get_trades
+#from handle_data import get_file_names, get_raw_book, get_dirlist, get_trades
+
 
 def compress_book(data: pd.DataFrame, timedelta: pd.Timedelta = pd.Timedelta(microseconds=10000)):
     data = data.copy().reset_index()
@@ -44,17 +47,17 @@ def create_trade_list(stock, days=59):
     return pd.concat(trade_list)
 
 
-def get_combined_book(stock_list: list, days=10) -> list[pd.DataFrame]:
+def get_combined_book(stock_list: list, days=10, compression=1000000) -> list[pd.DataFrame]:
     dir_list, path = get_dirlist(book=True)
     combined_books = []
     for stock in stock_list:
         combined_book = []
         files = get_file_names(stock, dir_list)
-        for file in tqdm(files[:days]):
+        for file in tqdm(files[30-days:30]):
             book = get_raw_book(path+file)
             if not book.empty:
                 book = compress_book(
-                    book, timedelta=pd.Timedelta(microseconds=100000))
+                    book, timedelta=pd.Timedelta(microseconds=compression))
                 book = book.dropna()
                 combined_book.append(book)
         combined_books.append(pd.concat(combined_book, axis=0))
@@ -178,7 +181,7 @@ def label_intensity(data: np.array, label_steps=[200, 400, 500, 700, 1000], wind
         for index, steps in enumerate(label_steps):
             delta = abs(np.mean(midpoints[i+1:i+steps+1]/midpoints[i]-1))
             if decoder_delta > 0:
-                labels[i, index, 0] = min(delta/(2*decoder_delta),1)
+                labels[i, index, 0] = min(delta/(decoder_delta), 1)
             else:
                 labels[i, index, 0] = 0
     return data[:-label_steps[-1], :].copy(), labels[:-label_steps[-1], :, :], decoder_input_data[:-label_steps[-1], :, :]
@@ -204,22 +207,24 @@ class Data_Generator(tf.keras.utils.Sequence):
             self.rand_ind = np.random.permutation(
                 int((self.n-self.window)/(self.window/self.overlap)))
         else:
-            self.rand_ind = np.arange(int((self.n-self.window)/(self.window/self.overlap)))
+            self.rand_ind = np.arange(
+                int((self.n-self.window)/(self.window/self.overlap)))
 
     def on_epoch_end(self):
         if self.shuffle:
             self.rand_ind = np.random.permutation(
                 int((self.n-self.window)/(self.window/self.overlap)))
         else:
-            self.rand_ind = np.arange(int((self.n-self.window)/(self.window/self.overlap)))
+            self.rand_ind = np.arange(
+                int((self.n-self.window)/(self.window/self.overlap)))
 
     def normalize_window(self, input):
         # normalize with min max in window
         data = input.copy()
-        data[:,0::2] = data[:,0::2]-np.min(data[:,0::2])
-        data[:,1::2] = data[:,1::2]-np.min(data[:,1::2])
-        data[:,0::2] = data[:,0::2]/np.max(data[:,0::2])
-        data[:,1::2] = data[:,1::2]/np.max(data[:,1::2])
+        data[:, 0::2] = data[:, 0::2]-np.min(data[:, 0::2])
+        data[:, 1::2] = data[:, 1::2]-np.min(data[:, 1::2])
+        data[:, 0::2] = data[:, 0::2]/np.max(data[:, 0::2])
+        data[:, 1::2] = data[:, 1::2]/np.max(data[:, 1::2])
         return data
 
     def __getitem__(self, index):
@@ -229,7 +234,8 @@ class Data_Generator(tf.keras.utils.Sequence):
         y = np.zeros((self.batch_size,)+self.labels_size)
         for i, ind in enumerate(start_ind):
             ind_ = ind * int(self.window/self.overlap)
-            x_1[i, :, :, 0] = self.normalize_window(self.en_inputs[ind_:ind_+self.window, :])
+            x_1[i, :, :, 0] = self.normalize_window(
+                self.en_inputs[ind_:ind_+self.window, :])
             x_2[i, :, :] = self.de_inputs[ind_+self.window-1, :, :]
             y[i, :, :] = self.labels[ind_+self.window-1, :, :]
         return [x_1, x_2], y
@@ -238,7 +244,7 @@ class Data_Generator(tf.keras.utils.Sequence):
         return int((self.n-self.window)/(self.window/self.overlap))
 
 
-def get_model_attention(latent_dim, window, num_steps, classes=3, fin_act='softmax'):
+def get_model_attention(latent_dim, window, num_steps, classes=3, fin_act='softmax', get_attention=False):
     # Luong Attention
     # https://arxiv.org/abs/1508.04025
 
@@ -286,23 +292,23 @@ def get_model_attention(latent_dim, window, num_steps, classes=3, fin_act='softm
 
     convsecond_output = keras.layers.concatenate(
         [convsecond_1, convsecond_2, convsecond_3], axis=3)
-    conv_reshape = keras.layers.Reshape((int(convsecond_output.shape[1]), int(convsecond_output.shape[3])))(
-        convsecond_output)
+    conv_reshape = keras.layers.Reshape((int(convsecond_output.shape[1]), int(
+        convsecond_output.shape[3])))(convsecond_output)
 
     # seq2seq
     encoder_inputs = conv_reshape
-    encoder = keras.layers.CuDNNLSTM(
+    encoder = keras.layers.LSTM(
         latent_dim, return_state=True, return_sequences=True)
     encoder_outputs, state_h, state_c = encoder(encoder_inputs)
     states = [state_h, state_c]
 
     # Set up the decoder, which will only process one timestep at a time.
     decoder_inputs = keras.layers.Input(shape=(1, classes))
-    decoder_lstm = keras.layers.CuDNNLSTM(
+    decoder_lstm = keras.layers.LSTM(
         latent_dim, return_sequences=True, return_state=True)
     decoder_dense = keras.layers.Dense(classes,
-                                        activation=fin_act, 
-                                        name='output_layer')
+                                       activation=fin_act,
+                                       name='output_layer')
 
     all_outputs = []
     all_attention = []
@@ -337,49 +343,237 @@ def get_model_attention(latent_dim, window, num_steps, classes=3, fin_act='softm
         lambda x: K.concatenate(x, axis=1), name='attentions')(all_attention)
 
     # Define and compile model as previously
-    model = keras.models.Model([input_train, decoder_inputs], decoder_outputs)
+    if get_attention:
+        model = keras.models.Model([input_train, decoder_inputs], [
+                                   decoder_outputs, decoder_attention])
+    else:
+        model = keras.models.Model(
+            [input_train, decoder_inputs], decoder_outputs)
     return model
+
 
 def score_midpoint(model1, model2, en_input, de_inputs1, labels1, de_inputs2, labels2, split):
     midpoints = np.mean(en_input[split:, [0, 2]], axis=1)
-    val_gen1 = Data_Generator(en_inputs[split:], de_inputs1[split:], labels1[split:], batch_size, window_size, overlap=1, shuffle=False)
-    val_gen2 = Data_Generator(en_inputs[split:], de_inputs2[split:], labels2[split:], batch_size, window_size, overlap=1, shuffle=False)
+    val_gen1 = Data_Generator(en_inputs[split:], de_inputs1[split:],
+                              labels1[split:], batch_size, window_size, overlap=1, shuffle=False)
+    val_gen2 = Data_Generator(en_inputs[split:], de_inputs2[split:],
+                              labels2[split:], batch_size, window_size, overlap=1, shuffle=False)
     pred1 = model1.predict(val_gen1)
     pred2 = model2.predict(val_gen2)
-    score = (pred1[:,4,0]-pred1[:,4,1])*pred2[:,4,0]
+    score = (pred1[:, 4, 0]-pred1[:, 4, 1])*pred2[:, 4, 0]
 
     return score, midpoints
 
 
+def get_model_input(path, market_id, timestamp: pd.Timestamp):
+    path_book = u'C:/Users/Lucas/Downloads/archive/_shared_storage/' \
+                u'read_only/efn2_backtesting/book/'
+    day = str(timestamp.day) if timestamp.day > 9 else '0'+str(timestamp.day)
+    date = str(timestamp.year)+'0'+str(timestamp.month)+day
+    file_name = 'Book_'+market_id+'_DE_'+date+'_'+date+'.csv.gz'
+    data_tmp = pd.read_csv(path_book+file_name, compression='gzip')
+    data_tmp['TIMESTAMP_UTC'] = pd.to_datetime(data_tmp['TIMESTAMP_UTC'])
+    data_tmp = data_tmp.resample(pd.Timedelta(
+        seconds=1), on='TIMESTAMP_UTC').mean()
+    data_tmp.dropna(inplace=True)  # save book -> no reload
+    # load if right book existing, else produce
+    ind = data_tmp.index.get_loc(
+        data_tmp.index[data_tmp.index <= timestamp][-1])
+    data_tmp = data_tmp.iloc[ind-200:ind, :]
+    data_tmp = data_tmp.to_numpy()
+
+    def normalize_window(input):
+        # normalize with min max in window
+        data = input.copy()
+        data[:, 0::2] = data[:, 0::2]-np.min(data[:, 0::2])
+        data[:, 1::2] = data[:, 1::2]-np.min(data[:, 1::2])
+        data[:, 0::2] = data[:, 0::2]/np.max(data[:, 0::2])
+        data[:, 1::2] = data[:, 1::2]/np.max(data[:, 1::2])
+        # expand dims
+        out = np.zeros((1, 200, 40, 1))
+        out[0, :, :, 0] = data
+        return out
+
+    def window_label(input):
+        data = input.copy()
+        midpoints = np.mean(data[:, [0, 2]], axis=1)
+        delta = np.mean(midpoints[0:200]/midpoints[0]-1)
+        out = np.zeros((1, 1, 2))
+        if delta > 0.0:
+            out[0, 0, 0] = 1
+        else:
+            out[0, 0, 1] = 1
+        return out
+
+    en_inputs = normalize_window(data_tmp)
+
+    de_inputs = window_label(data_tmp)
+
+    return en_inputs, de_inputs
+
+
+def evaluation_metrics(real_y, pred_y):
+    real_y = real_y[:len(pred_y)]
+    logging.info('-------------------------------')
+
+    for i in range(real_y.shape[1]):
+        print(f'Prediction horizon = {i}')
+        print(
+            f'accuracy_score = {accuracy_score(np.argmax(real_y[:, i], axis=1), np.argmax(pred_y[:, i], axis=1))}')
+        print(
+            f'classification_report = {classification_report(np.argmax(real_y[:, i], axis=1), np.argmax(pred_y[:, i], axis=1), digits=4)}')
+        print('-------------------------------')
+
+
+def attention_heatmap(val_gen, model, mtype):
+    import plotly.express as px
+    loaded_model = tf.keras.models.load_model(
+        './agent/resources/'+mtype+'_Allianz.hp5')
+    model.set_weights(loaded_model.get_weights())
+    inp = val_gen.__getitem__(0)
+    a, b = model.predict(inp[0])
+    fig = px.imshow(b[0, :, :])
+    fig.show()
+
+
+def create_model_eval():
+    window_size = 200
+    stock_list = ['Allianz', ]
+    stock = 'Allianz'
+    data = get_combined_book(stock_list, days=15)[0]
+    en_inputs, labels1, de_inputs1 = label_up_down(
+        data.to_numpy(), label_steps=[20, 40, 50, 70, 100], window=window_size)
+    _, labels2, de_inputs2 = label_intensity(data.to_numpy(), label_steps=[
+                                             20, 40, 50, 70, 100], window=window_size)
+    split = int(len(en_inputs)*0.9)
+    val_gen1 = Data_Generator(
+        en_inputs[split:], de_inputs1[split:], labels1[split:], 1, window_size, overlap=window_size, shuffle=False)
+    val_gen2 = Data_Generator(
+        en_inputs[split:], de_inputs2[split:], labels2[split:], 1, window_size, overlap=window_size, shuffle=False)
+
+    # load models
+    model1 = tf.keras.models.load_model(
+        './agent/resources/direction_'+stock+'.hp5')
+    model2 = tf.keras.models.load_model(
+        './agent/resources/intensity_'+stock+'.hp5')
+
+    # model predictions
+    pred1 = model1.predict(val_gen1)
+    pred2 = model2.predict(val_gen2)
+    val1 = np.array([val_gen1.__getitem__(i)[1][0]
+                    for i in range(len(val_gen1))])
+    val2 = np.array([val_gen2.__getitem__(i)[1][0]
+                    for i in range(len(val_gen2))])
+
+    # eval models
+    evaluation_metrics(val1, pred1)
+    # evaluation_metrics(val2, pred2) # not possible
+
+    # decide horizon
+    horizon = 2
+
+    # plotting stuff
+    def moving_avg(series, window):
+        mov_avg = np.zeros(len(series)-window)
+        for i in range(len(mov_avg)):
+            mov_avg[i] = np.mean(series[i:i+window])
+        return mov_avg
+
+    midpoints = np.mean(en_inputs[split+window_size:, [0, 2]], axis=1)
+
+    # midpoint change
+    change = moving_avg(midpoints[1:]/midpoints[:-1], 75)
+    plt.plot(change)
+    # unsignificant results -> 0
+    barrier1 = 0.9
+    barrier2 = 0.5
+    results_mask_1 = abs(
+        np.mean(pred1[:, :, 0], axis=1)-np.mean(pred1[:, :, 1], axis=1)) > 0.9
+    results_mask_2 = pred2[:, 4, 0] > barrier2
+    results1 = pred1[:, 1, :].copy()
+    results1[np.logical_not(results_mask_1), :] = 0
+
+    # moving avg over results -> pred horizon 100 - window/2
+    mov_results1 = moving_avg(results1[:, 0]-results1[:, 1], 50)
+    plt.plot(mov_results1)
+
+    mov_pred2 = moving_avg(pred2[:, horizon, 0], 1000)
+    plt.plot(mov_pred2)
+    mov_val2 = moving_avg(val2[:, horizon, 0], 2000)
+    plt.plot(mov_val2)
+    # barrier search vola 55-65 in 2er schritten -> 0.54 , 0.99 :0.67544425
+    m = tf.keras.metrics.CategoricalAccuracy()
+    for i in range(5):
+        barrier = round(0.52+i*0.01, 2)
+        mask1 = pred2[:, horizon, 0] > barrier
+        for j in range(10):
+            barrier0 = round(0.9+j*0.01, 2)
+            m.reset_state()
+            mask2 = abs(pred1[:, horizon, 0]-pred1[:, horizon, 1]) > barrier0
+            mask = np.logical_and(mask1, mask2)
+            m.update_state(val1[mask, horizon, :], pred1[mask, horizon, :])
+            print(str(barrier)+', '+str(barrier0)+': ', m.result().numpy())
+
+    pred_diff1 = pred1[:, 4, 0] - pred1[:, 4, 1]
+    start_barrier = (
+        abs(np.mean(pred_diff1[pred_diff1 < 0])) + np.mean(pred_diff1[pred_diff1 > 0]))/2
+    mask = pred_diff1 > start_barrier+0.1
+
+    acc = np.mean(labels1[mask, 0])
+    second_barrier = np.mean(pred2[:, 4, 0])
+    mask2 = pred2[:, 4, 0] > second_barrier
+    np.mean(labels1[np.logical_and(mask, mask2), 0])
+
 
 if __name__ == '__main__':
     # Adidas, 'Allianz','BASF' 'Bayer', 'BMW', 'Continental','Covestro', 'Covestro', 'Daimler', 'DeutscheBank', 'DeutscheBörse'
-    mode = 'direction'
-    stock_list = ['DeutscheBank', ]
+    mode = 'dire'
+    stock_list = ['Allianz', ]
     window_size = 200
     batch_size = 32
-    if mode=='direction':
-        model = get_model_attention(32, window_size, 5, classes=2)
-        model.compile(loss='categorical_crossentropy', metrics=[keras.metrics.CategoricalAccuracy(
-        ), keras.metrics.Recall(), tf.keras.metrics.Precision()], optimizer='adam')    
-    else:
-        model = get_model_attention(32, window_size, 5, classes=1, fin_act='relu')
-        model.compile(loss='mean_absolute_error', optimizer='adam')
-    data = get_combined_book(stock_list, days=10)
 
-    for _ in range(1):
-        for data_ in data:
-            if mode=='direction':
-                en_inputs, labels, de_inputs = label_up_down(data_.to_numpy())
-            else:
-                en_inputs, labels, de_inputs = label_intensity(data_.to_numpy())
-            print(np.mean(labels, axis=0))
-            split = int(len(en_inputs)*0.8)
-            train_gen = Data_Generator(
-                en_inputs[:split], de_inputs[:split], labels[:split], batch_size, window_size, overlap=1)
-            val_gen = Data_Generator(
-                en_inputs[split:], de_inputs[split:], labels[split:], batch_size, window_size, overlap=1)
-            model.fit(train_gen, validation_data=val_gen, epochs=3)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
+    if mode == 'direction':
+        model = get_model_attention(64, window_size, 5, classes=2)
+        model.compile(loss='categorical_crossentropy', metrics=[keras.metrics.CategoricalAccuracy(
+        ), keras.metrics.Recall(), tf.keras.metrics.Precision()], optimizer='adam')
+    else:
+        model = get_model_attention(
+            64, window_size, 5, classes=1, fin_act='sigmoid')
+        model.compile(loss='mean_absolute_error', optimizer='adam')
+    data = get_combined_book(stock_list, days=20)
+    data_ = data[0]
+
+    if mode == 'direction':
+        en_inputs, labels, de_inputs = label_up_down(data_.to_numpy(), label_steps=[
+                                                     20, 40, 50, 70, 100], window=window_size)
+    else:
+        en_inputs, labels, de_inputs = label_intensity(
+            data_.to_numpy(), label_steps=[20, 40, 50, 70, 100], window=window_size)
+    print(np.mean(labels, axis=0))
+    split = int(len(en_inputs)*0.9)
+    train_gen = Data_Generator(
+        en_inputs[:split], de_inputs[:split], labels[:split], batch_size, window_size, overlap=1)
+    val_gen = Data_Generator(
+        en_inputs[split:], de_inputs[split:], labels[split:], batch_size, window_size, overlap=1)
+    if mode == 'direction':
+        model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
+            filepath='./agent/resources/tmp_weights/weights',
+            save_weights_only=True,
+            monitor='val_categorical_accuracy',
+            mode='auto',
+            save_best_only=True)
+    else:
+        model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
+            filepath='./agent/resources/tmp_weights/weights',
+            save_weights_only=True,
+            monitor='val_loss',
+            mode='auto',
+            save_best_only=True)
+
+    model.fit(train_gen, validation_data=val_gen, epochs=5,
+              callbacks=[model_checkpoint_callback])
+    model.load_weights('./agent/resources/tmp_weights/weights')
 
 '''
 Training history:
