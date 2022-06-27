@@ -127,19 +127,20 @@ class OrderManagementSystem:
         :param timestamp:
             pd.Timestamp, timestamp of the moment the method is called
         """
-        volume_pattern = \
-            self.support.get_volume_distribution(market_id, timestamp,
-                                                 self.agent.time_window)
-        volume_avg = self.support.get_daily_volume(market_id)
-        self.parent_orders[market_id].append(
-            ParentOrder(timestamp,
-                        self.agent.relalitve_volume,
-                        market_id,
-                        volume_avg,
-                        self.agent.time_window,
-                        self,
-                        self.agent.child_window,
-                        volume_pattern))
+        if timestamp.hour+self.agent.time_window <= 16:
+            volume_pattern = \
+                self.support.get_volume_distribution(market_id, timestamp,
+                                                    self.agent.time_window)
+            volume_avg = self.support.get_daily_volume(market_id)
+            self.parent_orders[market_id].append(
+                ParentOrder(timestamp,
+                            self.agent.relalitve_volume,
+                            market_id,
+                            volume_avg,
+                            self.agent.time_window,
+                            self,
+                            self.agent.child_window,
+                            volume_pattern))
 
     def update_AP_metrics(self, market_id: str, trades_state: pd.Series) -> None:
         """

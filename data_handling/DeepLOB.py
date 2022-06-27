@@ -47,19 +47,29 @@ def create_trade_list(stock, days=59):
     return pd.concat(trade_list)
 
 
-def get_combined_book(stock_list: list, days=10, compression=1000000) -> list[pd.DataFrame]:
+def get_combined_book(stock_list: list, days=10, compression=1000000, day_to_day=[]) -> list[pd.DataFrame]:
     dir_list, path = get_dirlist(book=True)
     combined_books = []
+    test_set = int(days/4)
     for stock in stock_list:
         combined_book = []
         files = get_file_names(stock, dir_list)
-        for file in tqdm(files[30-days:30]):
-            book = get_raw_book(path+file)
-            if not book.empty:
-                book = compress_book(
-                    book, timedelta=pd.Timedelta(microseconds=compression))
-                book = book.dropna()
-                combined_book.append(book)
+        if len(day_to_day)==0:
+            for file in tqdm(files[30-days:30+test_set]):
+                book = get_raw_book(path+file)
+                if not book.empty:
+                    book = compress_book(
+                        book, timedelta=pd.Timedelta(microseconds=compression))
+                    book = book.dropna()
+                    combined_book.append(book)
+        else:
+            for file in tqdm(files[day_to_day[0]:day_to_day[1]]):
+                book = get_raw_book(path+file)
+                if not book.empty:
+                    book = compress_book(
+                        book, timedelta=pd.Timedelta(microseconds=compression))
+                    book = book.dropna()
+                    combined_book.append(book)
         combined_books.append(pd.concat(combined_book, axis=0))
     return combined_books
 
@@ -440,22 +450,25 @@ def create_model_eval():
     window_size = 200
     stock_list = ['Allianz', ]
     stock = 'Allianz'
-    data = get_combined_book(stock_list, days=15)[0]
+    data = get_combined_book(stock_list, day_to_day=[30,50])[0]
     en_inputs, labels1, de_inputs1 = label_up_down(
         data.to_numpy(), label_steps=[20, 40, 50, 70, 100], window=window_size)
     _, labels2, de_inputs2 = label_intensity(data.to_numpy(), label_steps=[
                                              20, 40, 50, 70, 100], window=window_size)
-    split = int(len(en_inputs)*0.9)
+    split = int(len(en_inputs)*0.8)
+    split = 0
     val_gen1 = Data_Generator(
-        en_inputs[split:], de_inputs1[split:], labels1[split:], 1, window_size, overlap=window_size, shuffle=False)
+        en_inputs[split:], de_inputs1[split:], labels1[split:], 1, window_size, overlap=1, shuffle=False)
     val_gen2 = Data_Generator(
-        en_inputs[split:], de_inputs2[split:], labels2[split:], 1, window_size, overlap=window_size, shuffle=False)
+        en_inputs[split:], de_inputs2[split:], labels2[split:], 1, window_size, overlap=1, shuffle=False)
 
     # load models
     model1 = tf.keras.models.load_model(
         './agent/resources/direction_'+stock+'.hp5')
     model2 = tf.keras.models.load_model(
         './agent/resources/intensity_'+stock+'.hp5')
+
+    model1.evaluate(val_gen1)
 
     # model predictions
     pred1 = model1.predict(val_gen1)
@@ -503,16 +516,16 @@ def create_model_eval():
     plt.plot(mov_val2)
     # barrier search vola 55-65 in 2er schritten -> 0.54 , 0.99 :0.67544425
     m = tf.keras.metrics.CategoricalAccuracy()
-    for i in range(5):
-        barrier = round(0.52+i*0.01, 2)
+    for i in range(7):
+        barrier = round(0.39+i*0.01, 2)
         mask1 = pred2[:, horizon, 0] > barrier
-        for j in range(10):
-            barrier0 = round(0.9+j*0.01, 2)
+        for j in range(5):
+            barrier0 = round(0.6+j*0.01, 2)
             m.reset_state()
             mask2 = abs(pred1[:, horizon, 0]-pred1[:, horizon, 1]) > barrier0
             mask = np.logical_and(mask1, mask2)
             m.update_state(val1[mask, horizon, :], pred1[mask, horizon, :])
-            print(str(barrier)+', '+str(barrier0)+': ', m.result().numpy())
+            print(str(barrier)+', '+str(barrier0)+': ', m.result().numpy(),' ', np.sum(mask))
 
     pred_diff1 = pred1[:, 4, 0] - pred1[:, 4, 1]
     start_barrier = (
@@ -527,7 +540,7 @@ def create_model_eval():
 
 if __name__ == '__main__':
     # Adidas, 'Allianz','BASF' 'Bayer', 'BMW', 'Continental','Covestro', 'Covestro', 'Daimler', 'DeutscheBank', 'DeutscheBörse'
-    mode = 'dire'
+    mode = 'direction'
     stock_list = ['Allianz', ]
     window_size = 200
     batch_size = 32
@@ -541,7 +554,7 @@ if __name__ == '__main__':
         model = get_model_attention(
             64, window_size, 5, classes=1, fin_act='sigmoid')
         model.compile(loss='mean_absolute_error', optimizer='adam')
-    data = get_combined_book(stock_list, days=20)
+    data = get_combined_book(stock_list, day_to_day=[5,55])
     data_ = data[0]
 
     if mode == 'direction':
@@ -551,7 +564,7 @@ if __name__ == '__main__':
         en_inputs, labels, de_inputs = label_intensity(
             data_.to_numpy(), label_steps=[20, 40, 50, 70, 100], window=window_size)
     print(np.mean(labels, axis=0))
-    split = int(len(en_inputs)*0.9)
+    split = int(len(en_inputs)*0.5)
     train_gen = Data_Generator(
         en_inputs[:split], de_inputs[:split], labels[:split], batch_size, window_size, overlap=1)
     val_gen = Data_Generator(
@@ -560,7 +573,7 @@ if __name__ == '__main__':
         model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
             filepath='./agent/resources/tmp_weights/weights',
             save_weights_only=True,
-            monitor='val_categorical_accuracy',
+            monitor='val_loss',
             mode='auto',
             save_best_only=True)
     else:

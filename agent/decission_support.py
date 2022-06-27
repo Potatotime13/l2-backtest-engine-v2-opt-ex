@@ -27,8 +27,11 @@ class DecisionSupport:
             'direction', stock) for stock in stock_list}
         self.ml_intensity = {stock: self.load_ml_model(
             'intensity', stock) for stock in stock_list}
-        self.limit_adj_hist = {stock:0 for stock in stock_list}
-        self.volume_adj_hist = {stock:0 for stock in stock_list}
+        self.flag_aggressive = {stock: pd.Timestamp(
+            2021, 1, 1, 8, 0) for stock in stock_list}
+        self.flag_passive = {stock: [pd.Timestamp(
+            2021, 1, 1, 8, 0), 0] for stock in stock_list}
+        self.limit_adj_hist = {stock: 0 for stock in stock_list}
         self.current_books = {stock: pd.DataFrame([]) for stock in stock_list}
         self.agent = agent
         self.stock_list = stock_list
@@ -38,12 +41,12 @@ class DecisionSupport:
         if agent.level > 0:
             self.minute_vol = {stock: pd.read_csv('./agent/resources/'+stock+'_trade_summary.csv', index_col='Unnamed: 0')
                                for stock in stock_list}
-        
-        ### Hardcoded stats
+
+        # Hardcoded stats
         self.ml_model_stats = {
-            'Allianz': {'barrier_int':0.54, 'barrier_dir':0.98, 'horizon':2, 'secs_per_signal':20},
-            'Adidas': {'barrier_int':0.54, 'barrier_dir':0.98, 'horizon':2, 'secs_per_signal':20},
-            'Continental': {'barrier_int':0.54, 'barrier_dir':0.98, 'horizon':2, 'secs_per_signal':20}
+            'Allianz': {'barrier_int': 0.54, 'barrier_dir': 0.98, 'horizon': 2, 'secs_per_signal': 20},
+            'Adidas': {'barrier_int': 0.32, 'barrier_dir': 0.5, 'horizon': 2, 'secs_per_signal': 20},
+            'Continental': {'barrier_int': 0.42, 'barrier_dir': 0.6, 'horizon': 2, 'secs_per_signal': 20}
         }
 
     def load_ml_model(self, model_type, market_id):
@@ -83,7 +86,8 @@ class DecisionSupport:
             if self.last_level1[order.market_id] == None or self.last_level1[order.market_id] != act_level1:
                 self.last_level1[order.market_id] = act_level1
                 new_strat = self.get_strat(market_state, order, orders)
-                cancel, submit = self.match_strat(orders, new_strat, order.side)
+                cancel, submit = self.match_strat(
+                    orders, new_strat, order.side)
                 return cancel, submit
             else:
                 return [], []
@@ -101,59 +105,77 @@ class DecisionSupport:
         volume = int(volume / window_left)
 
         opt_level, new_score = self.determinate_price(
-                                                    market_state,
-                                                    p_order, midpoint,
-                                                    5, volume)
+            market_state,
+            p_order, midpoint,
+            self.agent.time_window, volume)
         opt_level = self.current_best_order(
-                                            orders, (opt_level, volume), 
-                                            p_order, market_state, 
-                                            midpoint, new_score, 5)
+            orders, (opt_level, volume),
+            p_order, market_state,
+            midpoint, new_score, self.agent.time_window)
         limit_adj = 0
+        aggressive_strat = []
+        opt_level = min(opt_level + 1, 10)  # weil nicht das einzige volumen
+
+        # passive is active?
+        pas_active = (market_state['TIMESTAMP_UTC'] -
+                      self.flag_passive[p_order.market_id][0]).total_seconds() < 15
+
         if p_order.schedule.get_outstanding(
                 market_state['TIMESTAMP_UTC']+pd.Timedelta(
                     minutes=p_order.schedule.child_window)) > 0:
-            limit_adj, volume_adj = self.get_ml_limit_adj(
-                                            p_order, market_state['TIMESTAMP_UTC'], 
-                                            tick_size, market_state, 
-                                            market_state['L'+str(opt_level)+'-'+side_name+'Price'])
-            if limit_adj == 0:
-                limit_adj = self.limit_adj_hist[p_order.market_id] * (2/3)
-                self.limit_adj_hist[p_order.market_id] = limit_adj
-                limit_adj = limit_adj//tick_size*tick_size
-                volume_adj = self.volume_adj_hist[p_order.market_id] * (2/3)
-                self.volume_adj_hist[p_order.market_id] = volume_adj
-            else:
-                self.limit_adj_hist[p_order.market_id] = limit_adj
-                self.volume_adj_hist[p_order.market_id] = volume_adj
-            volume = min(int(volume+volume_adj), p_order.schedule.get_outstanding(
-                market_state['TIMESTAMP_UTC']+pd.Timedelta(minutes=p_order.schedule.child_window)))
-        if volume > 0:
-            strat = [[round(market_state['L'+str(level)+'-'+side_name+'Price']+limit_adj, 2), volume]
-                        for level in range(opt_level, min(opt_level+3, 10))]
-        else:
-            strat = [[round(market_state['L'+str(level)+'-'+side_name+'Price']+limit_adj, 2), volume]
-                        for level in range(opt_level, min(opt_level+3, 10))]
+
+            limit_adj, volume_adj, mode = self.get_ml_limit_adj(
+                p_order, market_state['TIMESTAMP_UTC'],
+                tick_size, market_state,
+                market_state['L'+str(opt_level)+'-'+side_name+'Price'])
+            rest = round(limit_adj % 0.02, 2) % 0.02
+            if rest > 0:
+                limit_adj += rest
+            # mode aggresive
+            if mode == 'agr':
+                if (market_state['TIMESTAMP_UTC'] - self.flag_aggressive[p_order.market_id]).total_seconds() > 1:
+                    aggressive_strat = [[round(
+                        market_state['L'+str(opt_level)+'-'+side_name+'Price']+limit_adj, 2), int(volume_adj)]]
+                    limit_adj = 0
+                    self.flag_aggressive[p_order.market_id] = market_state['TIMESTAMP_UTC']
+            elif mode == 'pas':
+                self.flag_passive[p_order.market_id][0] = market_state['TIMESTAMP_UTC']
+                self.flag_passive[p_order.market_id][1] = limit_adj
+
+        # laxering passive if passive active
+        if pas_active:
+            limit_adj = self.flag_passive[p_order.market_id][1]
+
+        strat = [[round(market_state['L'+str(level)+'-'+side_name+'Price']+limit_adj, 2), volume]
+                 for level in range(opt_level, min(opt_level+3, 10))]
+
+        if len(aggressive_strat) > 0:
+            strat = aggressive_strat+strat
+
         return np.array(strat)
 
     def match_strat(self, orders: List[Order], strat: np.array, side: str) -> tuple(list, list):
         cancelations = []
-        if side == 'buy':
-            for order in orders:
-                if order.limit > np.max(strat[:, 0]):
-                    cancelations.append(order)
-                else:
-                    ind = np.argmin(abs(strat[:, 0]-order.limit))
-                    strat[ind, 1] -= order.quantity
-            fullfill = strat[:, 1] > 0
+        if len(strat) > 0:
+            if side == 'buy':
+                for order in orders:
+                    if order.limit > np.max(strat[:, 0]):
+                        cancelations.append(order)
+                    else:
+                        ind = np.argmin(abs(strat[:, 0]-order.limit))
+                        strat[ind, 1] -= order.quantity
+                fullfill = strat[:, 1] > 0
+            else:
+                for order in orders:
+                    if order.limit < np.max(strat[:, 0]):
+                        cancelations.append(order)
+                    else:
+                        ind = np.argmin(abs(strat[:, 0]-order.limit))
+                        strat[ind, 1] -= order.quantity
+                fullfill = strat[:, 1] > 0
+            return cancelations, strat[fullfill, :].tolist()
         else:
-            for order in orders:
-                if order.limit < np.max(strat[:, 0]):
-                    cancelations.append(order)
-                else:
-                    ind = np.argmin(abs(strat[:, 0]-order.limit))
-                    strat[ind, 1] -= order.quantity
-            fullfill = strat[:, 1] > 0
-        return cancelations, strat[fullfill, :].tolist()
+            return [], []
 
     def determinate_price(self, market_state, p_order: ParentOrder, midpoint: float, window_left, volume):
         if self.agent.level == 1:
@@ -163,11 +185,13 @@ class DecisionSupport:
             mins = timestamp.minute
             if p_order.side == 'buy':
                 volume_to_fill = volume + market_state.to_numpy()[2::4]
-                prob = self.new_prob(df, 0, volume_to_fill, hour, mins, window_left)
+                prob = self.new_prob(df, 0, volume_to_fill,
+                                     hour, mins, window_left)
                 price = market_state.to_numpy()[1::4]
             else:
                 volume_to_fill = volume + market_state.to_numpy()[4::4]
-                prob = self.new_prob(df, 10, volume_to_fill, hour, mins, window_left)
+                prob = self.new_prob(df, 10, volume_to_fill,
+                                     hour, mins, window_left)
                 price = market_state.to_numpy()[3::4]
             score = self.get_score(midpoint, price, prob, volume, p_order.side)
             level = np.argmax(score)+1
@@ -206,7 +230,7 @@ class DecisionSupport:
                             vol_queue.append(vol_tmp+order.quantity)
                             level.append(tmp_lev)
                             volume.append(order.quantity)
-            if len(level)>0:
+            if len(level) > 0:
                 level = np.array(level)
                 vq = np.zeros(10)
                 vl = np.zeros(10)
@@ -247,11 +271,11 @@ class DecisionSupport:
     def new_prob(self, df, level, vol, hour, mins, window):
         count = 0
         data = df.copy().to_numpy()
-        
+
         def func(day):
             count_len = 0
             sub_count = np.zeros(10)
-            for min_ in range(int(max(0,mins-5)), int(min(mins+5+window,60))):
+            for min_ in range(int(max(0, mins-5)), int(min(mins+5+window, 60))):
                 count_len += 1
                 filter_ = np.logical_and(data[:, -1] == day,
                                          np.logical_and(data[:, 21] == hour,
@@ -370,45 +394,52 @@ class DecisionSupport:
     def get_intensity(self, market_id, timestamp):
         book = self.get_book_file(timestamp, market_id, 200)
         inp1, inp2 = self.get_model_inputs(book, 'intensity')
-        pred = self.ml_intensity[market_id].predict((inp1, inp2),verbose=0)
+        pred = self.ml_intensity[market_id].predict((inp1, inp2), verbose=0)
         return pred
 
     def get_direction(self, market_id, timestamp):
         book = self.get_book_file(timestamp, market_id, 200)
         inp1, inp2 = self.get_model_inputs(book, 'direction')
-        pred = self.ml_direction[market_id].predict((inp1, inp2),verbose=0)
+        pred = self.ml_direction[market_id].predict((inp1, inp2), verbose=0)
         return pred
 
     def get_ml_limit_adj(self, p_order: ParentOrder, timestamp, tick_size, market_state, limit):
-        market_id = p_order.market_id        
+        market_id = p_order.market_id
         intensity = self.get_intensity(market_id, timestamp)
         side = p_order.side
         limit_adj = 0
         volume_adj = 1
+        mode = None
         horizon = self.ml_model_stats[market_id]['horizon']
         if intensity[0, horizon, 0] > self.ml_model_stats[market_id]['barrier_int']:
             direction = self.get_direction(market_id, timestamp)
             best_bid = market_state['L1-BidPrice']
             best_ask = market_state['L1-AskPrice']
-            tmp_vol = p_order.volume / (self.agent.time_window*3600/self.ml_model_stats[market_id]['secs_per_signal'])
+            tmp_vol = p_order.volume / \
+                (self.agent.time_window*3600 /
+                 self.ml_model_stats[market_id]['secs_per_signal']) * 2
             if direction[0, horizon, 0]-direction[0, horizon, 1] > self.ml_model_stats[market_id]['barrier_dir']:
-                print('up')
-                if side=='buy':
+
+                if side == 'buy':
                     # act agressive -> marketble order best ask
                     limit_adj = best_ask-limit
                     volume_adj = tmp_vol
+                    mode = 'agr'
                 else:
                     # act passive -> increase limit and volume
-                    limit_adj = -tick_size*3
-                    volume_adj = 0
-            elif direction[0, horizon, 0]-direction[0, horizon, 1] < -self.ml_model_stats[market_id]['barrier_dir']:
-                print('down')
-                if side=='buy':
-                    # act passive -> reduce limit and volume
-                    limit_adj = -tick_size*3
+                    limit_adj = -tick_size
                     volume_adj = tmp_vol
+                    mode = 'pas'
+            elif direction[0, horizon, 0]-direction[0, horizon, 1] < -self.ml_model_stats[market_id]['barrier_dir']:
+
+                if side == 'buy':
+                    # act passive -> reduce limit and volume
+                    limit_adj = -tick_size
+                    volume_adj = tmp_vol
+                    mode = 'pas'
                 else:
                     # act agressive -> marketable order best bid
                     limit_adj = best_bid - limit
-                    volume_adj = 10
-        return limit_adj, volume_adj
+                    volume_adj = tmp_vol
+                    mode = 'agr'
+        return limit_adj, volume_adj, mode

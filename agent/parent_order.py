@@ -55,10 +55,11 @@ class ParentOrder:
 
         # WARNING static start at 8:xx for testing
         start_h = max(8, ts.hour)  # rn.randint(8, self.MARKET_END.hour-1)
-        start_m = ts.minute+2  # rn.randint(15, 59)
+        start_m = min(ts.minute+2, 59)  # rn.randint(15, 59)
         ############################################
 
-        self.start_time = pd.Timestamp(ts.year, ts.month, ts.day, start_h, start_m)
+        self.start_time = pd.Timestamp(
+            ts.year, ts.month, ts.day, start_h, start_m)
         if self.start_time \
                 + pd.DateOffset(minutes=time_window_length*60) \
                 > self.MARKET_END:
@@ -113,9 +114,9 @@ class ParentOrder:
             self.time_sum = self.twap_time - self.start_time
         else:
             delta_t = exec_trade.timestamp - self.twap_time
-            self.twap = ((self.twap * self.time_sum.microseconds + 
-                            exec_trade.price * delta_t.microseconds) / 
-                            (self.time_sum.microseconds+delta_t.microseconds))
+            self.twap = ((self.twap * self.time_sum.microseconds +
+                          exec_trade.price * delta_t.microseconds) /
+                         (self.time_sum.microseconds+delta_t.microseconds))
             self.time_sum += delta_t
             self.twap_time = exec_trade.timestamp
         if self.market_vwap is not None:
@@ -171,7 +172,7 @@ class ParentOrder:
                                 + trade_volume * trade_vwap) \
                 / (self.market_volume+trade_volume)
             self.market_volume += trade_volume
-    
+
     def actualize_market_twap(self, trade_state: pd.Series):
         trade_price = np.mean(trade_state['Price'])
         if self.market_twap is None:
@@ -180,9 +181,9 @@ class ParentOrder:
             self.market_time_sum = self.market_twap_time - self.start_time
         else:
             delta_t = trade_state['TIMESTAMP_UTC'] - self.market_twap_time
-            self.market_twap = ((self.market_twap * self.market_time_sum.microseconds + 
-                                    trade_price * delta_t.microseconds) / 
-                                    (self.market_time_sum.microseconds+
-                                    delta_t.microseconds))
+            self.market_twap = ((self.market_twap * self.market_time_sum.microseconds +
+                                 trade_price * delta_t.microseconds) /
+                                (self.market_time_sum.microseconds +
+                                 delta_t.microseconds))
             self.market_time_sum += delta_t
             self.market_twap_time = trade_state['TIMESTAMP_UTC']

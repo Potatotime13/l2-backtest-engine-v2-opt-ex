@@ -1,0 +1,7 @@
+jeder lässt drei terminals parallel laufen mit dem jeweiligen commando:
+
+python main.py 0.05 3 1 5 [Aktien Name]
+
+python main.py 0.05 6 1 5 [Aktien Name]
+
+python main.py 0.05 6 1 17 [Aktien Name]

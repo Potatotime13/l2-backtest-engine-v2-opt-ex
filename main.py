@@ -65,8 +65,9 @@ class Agent(BaseAgent):
         :param name:
             str, agent name
         """
-        self.reset(name, identifies, rel_vol, t_window, c_window, level, *args, **kwargs)
-    
+        self.reset(name, identifies, rel_vol, t_window,
+                   c_window, level, *args, **kwargs)
+
     def reset(self, name, identifies, rel_vol, t_window, c_window, level, *args, **kwargs):
         super(Agent, self).__init__(name, *args, **kwargs)
 
@@ -222,7 +223,7 @@ if __name__ == "__main__":
     # information.
 
     rel_vol = 0.05
-    t_window = 1
+    t_window = 6
     level = 1
 
     if len(sys.argv) > 1:
@@ -230,6 +231,8 @@ if __name__ == "__main__":
         t_window = int(sys.argv[2])
         level = int(sys.argv[3])
         day = int(sys.argv[4])
+        stock = str(sys.argv[5])
+        identifier_list = [stock+".BOOK", stock+".TRADES"]
 
     agent = Agent(name="test_agent", identifies=identifier_list,
                   rel_vol=rel_vol, t_window=t_window, c_window=10, level=level)
@@ -271,24 +274,65 @@ if __name__ == "__main__":
     # list a tuple (episode_start_buffer, episode_start, episode_end) for each
     # episode
     if len(sys.argv) > 1:
-        backtest.run_episode_list(identifier_list=identifier_list, episode_list=[
-            ("2021-02-"+ str(day) +"T08:00:00", "2021-02-"+ str(day) +"T08:15:00", "2021-02-"+ str(day) +"T14:20:00"),
-            ("2021-02-"+ str(day+3) +"T10:00:00", "2021-02-"+ str(day+3) +"T10:15:00", "2021-02-"+ str(day+3) +"T16:20:00"),
-            ("2021-02-"+ str(day+5) +"T08:00:00", "2021-02-"+ str(day+5) +"T08:15:00", "2021-02-"+ str(day+5) +"T14:20:00"),
-            ("2021-02-"+ str(day+7) +"T10:00:00", "2021-02-"+ str(day+7) +"T10:15:00", "2021-02-"+ str(day+7) +"T16:20:00"),
-            ("2021-02-"+ str(day+10) +"T08:00:00", "2021-02-"+ str(day+10) +"T08:15:00", "2021-02-"+ str(day+10) +"T14:20:00"),
-            ("2021-02-"+ str(day+12) +"T10:00:00", "2021-02-"+ str(day+12) +"T10:15:00", "2021-02-"+ str(day+12) +"T16:20:00"),
-            ("2021-02-"+ str(day+14) +"T08:00:00", "2021-02-"+ str(day+14) +"T08:15:00", "2021-02-"+ str(day+14) +"T14:20:00"),
-            ("2021-02-"+ str(day+17) +"T10:00:00", "2021-02-"+ str(day+17) +"T10:15:00", "2021-02-"+ str(day+17) +"T16:20:00"),
-            ("2021-02-"+ str(day+19) +"T08:00:00", "2021-02-"+ str(day+19) +"T08:15:00", "2021-02-"+ str(day+19) +"T14:20:00"),
-            ("2021-02-"+ str(day+21) +"T10:00:00", "2021-02-"+ str(day+21) +"T10:15:00", "2021-02-"+ str(day+21) +"T16:20:00"),
-            #  ...
+        start_h1 = 8
+        start_h2 = 10
+        if t_window == 3:
+            backtest.run_episode_list(identifier_list=identifier_list, episode_list=[
+                ("2021-02-" + str(day) + "T0"+str(start_h1)+":00:00", "2021-02-" + str(day) + "T0" +
+                 str(start_h1)+":15:00", "2021-02-" + str(day) + "T"+str(start_h1+t_window)+":20:00"),
+                ("2021-02-" + str(day+3) + "T"+str(start_h2)+":00:00", "2021-02-" + str(day+3) + "T" +
+                 str(start_h2)+":15:00", "2021-02-" + str(day+3) + "T"+str(start_h2+t_window)+":20:00"),
+                ("2021-02-" + str(day+5) + "T0"+str(start_h1)+":00:00", "2021-02-" + str(day+5) + "T0" +
+                 str(start_h1)+":15:00", "2021-02-" + str(day+5) + "T"+str(start_h1+t_window)+":20:00"),
+                ("2021-02-" + str(day+7) + "T"+str(start_h2)+":00:00", "2021-02-" + str(day+7) + "T" +
+                 str(start_h2)+":15:00", "2021-02-" + str(day+7) + "T"+str(start_h2+t_window)+":20:00"),
+                ("2021-02-" + str(day+10) + "T0"+str(start_h1)+":00:00", "2021-02-" + str(day+10) + "T0" +
+                 str(start_h1)+":15:00", "2021-02-" + str(day+10) + "T"+str(start_h1+t_window)+":20:00"),
+                ("2021-02-" + str(day+12) + "T"+str(start_h2)+":00:00", "2021-02-" + str(day+12) + "T" +
+                 str(start_h2)+":15:00", "2021-02-" + str(day+12) + "T"+str(start_h2+t_window)+":20:00"),
+                ("2021-02-" + str(day+14) + "T0"+str(start_h1)+":00:00", "2021-02-" + str(day+14) + "T0" +
+                 str(start_h1)+":15:00", "2021-02-" + str(day+14) + "T"+str(start_h1+t_window)+":20:00"),
+                ("2021-02-" + str(day+17) + "T"+str(start_h2)+":00:00", "2021-02-" + str(day+17) + "T" +
+                 str(start_h2)+":15:00", "2021-02-" + str(day+17) + "T"+str(start_h2+t_window)+":20:00"),
+                ("2021-02-" + str(day+19) + "T0"+str(start_h1)+":00:00", "2021-02-" + str(day+19) + "T0" +
+                 str(start_h1)+":15:00", "2021-02-" + str(day+19) + "T"+str(start_h1+t_window)+":20:00"),
+                ("2021-02-" + str(day+21) + "T"+str(start_h2)+":00:00", "2021-02-" + str(day+21) + "T" +
+                 str(start_h2)+":15:00", "2021-02-" + str(day+21) + "T"+str(start_h2+t_window)+":20:00"),
+                #  ...
             ],
-        )
+            )
+        elif t_window == 6:
+            if day == 5:
+                backtest.run_episode_list(identifier_list=identifier_list, episode_list=[
+                    ("2021-02-" + str(day) + "T0"+str(start_h1)+":00:00", "2021-02-" + str(day) + "T0" +
+                     str(start_h1)+":15:00", "2021-02-" + str(day) + "T"+str(start_h1+t_window)+":20:00"),
+                    ("2021-02-" + str(day+3) + "T"+str(start_h2)+":00:00", "2021-02-" + str(day+3) + "T" +
+                     str(start_h2)+":15:00", "2021-02-" + str(day+3) + "T"+str(start_h2+t_window)+":20:00"),
+                    ("2021-02-" + str(day+5) + "T0"+str(start_h1)+":00:00", "2021-02-" + str(day+5) + "T0" +
+                     str(start_h1)+":15:00", "2021-02-" + str(day+5) + "T"+str(start_h1+t_window)+":20:00"),
+                    ("2021-02-" + str(day+7) + "T"+str(start_h2)+":00:00", "2021-02-" + str(day+7) + "T" +
+                     str(start_h2)+":15:00", "2021-02-" + str(day+7) + "T"+str(start_h2+t_window)+":20:00"),
+                    ("2021-02-" + str(day+10) + "T0"+str(start_h1)+":00:00", "2021-02-" + str(day+10) + "T0"+str(start_h1)+":15:00", "2021-02-" + str(day+10) + "T"+str(start_h1+t_window)+":20:00"), ])
+            elif day == 17:
+                backtest.run_episode_list(identifier_list=identifier_list, episode_list=[
+                    ("2021-02-" + str(day) + "T"+str(start_h2)+":00:00", "2021-02-" + str(day) + "T" +
+                     str(start_h2)+":15:00", "2021-02-" + str(day) + "T"+str(start_h2+t_window)+":20:00"),
+                    ("2021-02-" + str(day+2) + "T0"+str(start_h1)+":00:00", "2021-02-" + str(day+2) + "T0" +
+                     str(start_h1)+":15:00", "2021-02-" + str(day+2) + "T"+str(start_h1+t_window)+":20:00"),
+                    ("2021-02-" + str(day+5) + "T"+str(start_h2)+":00:00", "2021-02-" + str(day+5) + "T" +
+                     str(start_h2)+":15:00", "2021-02-" + str(day+5) + "T"+str(start_h2+t_window)+":20:00"),
+                    ("2021-02-" + str(day+7) + "T0"+str(start_h1)+":00:00", "2021-02-" + str(day+7) + "T0" +
+                     str(start_h1)+":15:00", "2021-02-" + str(day+7) + "T"+str(start_h1+t_window)+":20:00"),
+                    ("2021-02-" + str(day+9) + "T"+str(start_h2)+":00:00", "2021-02-" + str(day+9) + "T"+str(start_h2)+":15:00", "2021-02-" + str(day+9) + "T"+str(start_h2+t_window)+":20:00"), ])
+            else:
+                print('wrong day')
 
     else:
+        day = 5
         backtest.run_episode_list(identifier_list=identifier_list, episode_list=[
-            ("2021-02-01T08:00:00", "2021-02-01T08:15:00", "2021-02-01T09:20:00"),
+            ("2021-02-" + str(day+3) + "T10:00:00", "2021-02-" +
+             str(day+3) + "T10:15:00", "2021-02-" + str(day+3) + "T16:20:00"),
+            #("2021-02-"+ str(day) +"T08:00:00", "2021-02-"+ str(day) +"T08:15:00", "2021-02-"+ str(day) +"T14:20:00"),
             #  ...
-            ],
+        ],
         )
