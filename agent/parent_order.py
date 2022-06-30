@@ -73,7 +73,7 @@ class ParentOrder:
                                 pd.Timestamp(ts.year, ts.month, ts.day,
                                              start_h + time_window_length,
                                              start_m)]
-        self.side = rn.choice(['buy', 'sell'])
+        self.side = rn.choice(['sell'])
         self.schedule = Schedule(self, child_window, pattern)
 
         # order status

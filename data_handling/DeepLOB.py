@@ -54,7 +54,7 @@ def get_combined_book(stock_list: list, days=10, compression=1000000, day_to_day
     for stock in stock_list:
         combined_book = []
         files = get_file_names(stock, dir_list)
-        if len(day_to_day)==0:
+        if len(day_to_day) == 0:
             for file in tqdm(files[30-days:30+test_set]):
                 book = get_raw_book(path+file)
                 if not book.empty:
@@ -435,22 +435,46 @@ def evaluation_metrics(real_y, pred_y):
         print('-------------------------------')
 
 
-def attention_heatmap(val_gen, model, mtype):
-    import plotly.express as px
-    loaded_model = tf.keras.models.load_model(
+def attention_heatmap(val_gen1, mtype):
+    visual_model = get_model_attention(64, window_size, 5, classes=2, get_attention=True)
+    model1 = tf.keras.models.load_model(
         './agent/resources/'+mtype+'_Allianz.hp5')
-    model.set_weights(loaded_model.get_weights())
-    inp = val_gen.__getitem__(0)
-    a, b = model.predict(inp[0])
-    fig = px.imshow(b[0, :, :])
+    visual_model.set_weights(model1.get_weights())
+    inp = val_gen1.__getitem__(0)
+    a, b = visual_model.predict(val_gen1)
+
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    fig = make_subplots(1,2,horizontal_spacing=0.20)
+
+    fig.add_trace(go.Heatmap(
+        y=['20 sek', '40 sek','50 sek','70 sek','100 sek'],
+        x=np.arange(200)-200,
+        z=np.mean(b[:3,:,:], axis=0),
+        colorbar_x=0.42),1,1)
+
+    fig.update_layout(
+        title="Attention Matrizen",
+        xaxis_title="Input Horizont",
+        yaxis_title="Vorhersage Horizont",
+    )
+
+    fig.add_trace(go.Heatmap(
+        y=['20 sek', '40 sek','50 sek','70 sek','100 sek'],
+        x=np.arange(200)-200,
+        z=np.mean(b[:100,:,:], axis=0),
+        ),1,2)
+
+    fig.update_xaxes(title_text="Input Horizont", row = 1, col = 2)
+
     fig.show()
 
 
 def create_model_eval():
     window_size = 200
-    stock_list = ['Allianz', ]
-    stock = 'Allianz'
-    data = get_combined_book(stock_list, day_to_day=[30,50])[0]
+    stock_list = ['Continental', ]
+    stock = 'Continental'
+    data = get_combined_book(stock_list, day_to_day=[30, 34])[0]
     en_inputs, labels1, de_inputs1 = label_up_down(
         data.to_numpy(), label_steps=[20, 40, 50, 70, 100], window=window_size)
     _, labels2, de_inputs2 = label_intensity(data.to_numpy(), label_steps=[
@@ -458,9 +482,9 @@ def create_model_eval():
     split = int(len(en_inputs)*0.8)
     split = 0
     val_gen1 = Data_Generator(
-        en_inputs[split:], de_inputs1[split:], labels1[split:], 1, window_size, overlap=1, shuffle=False)
+        en_inputs[split:], de_inputs1[split:], labels1[split:], 1, window_size, overlap=10, shuffle=False)
     val_gen2 = Data_Generator(
-        en_inputs[split:], de_inputs2[split:], labels2[split:], 1, window_size, overlap=1, shuffle=False)
+        en_inputs[split:], de_inputs2[split:], labels2[split:], 1, window_size, overlap=10, shuffle=False)
 
     # load models
     model1 = tf.keras.models.load_model(
@@ -469,6 +493,7 @@ def create_model_eval():
         './agent/resources/intensity_'+stock+'.hp5')
 
     model1.evaluate(val_gen1)
+    model2.evaluate(val_gen2)
 
     # model predictions
     pred1 = model1.predict(val_gen1)
@@ -525,7 +550,8 @@ def create_model_eval():
             mask2 = abs(pred1[:, horizon, 0]-pred1[:, horizon, 1]) > barrier0
             mask = np.logical_and(mask1, mask2)
             m.update_state(val1[mask, horizon, :], pred1[mask, horizon, :])
-            print(str(barrier)+', '+str(barrier0)+': ', m.result().numpy(),' ', np.sum(mask))
+            print(str(barrier)+', '+str(barrier0)+': ',
+                  m.result().numpy(), ' ', np.sum(mask))
 
     pred_diff1 = pred1[:, 4, 0] - pred1[:, 4, 1]
     start_barrier = (
@@ -554,7 +580,7 @@ if __name__ == '__main__':
         model = get_model_attention(
             64, window_size, 5, classes=1, fin_act='sigmoid')
         model.compile(loss='mean_absolute_error', optimizer='adam')
-    data = get_combined_book(stock_list, day_to_day=[5,55])
+    data = get_combined_book(stock_list, day_to_day=[5, 55])
     data_ = data[0]
 
     if mode == 'direction':

@@ -223,7 +223,7 @@ if __name__ == "__main__":
     # information.
 
     rel_vol = 0.05
-    t_window = 6
+    t_window = 3
     level = 1
 
     if len(sys.argv) > 1:
@@ -330,9 +330,9 @@ if __name__ == "__main__":
     else:
         day = 5
         backtest.run_episode_list(identifier_list=identifier_list, episode_list=[
-            ("2021-02-" + str(day+3) + "T10:00:00", "2021-02-" +
-             str(day+3) + "T10:15:00", "2021-02-" + str(day+3) + "T16:20:00"),
-            #("2021-02-"+ str(day) +"T08:00:00", "2021-02-"+ str(day) +"T08:15:00", "2021-02-"+ str(day) +"T14:20:00"),
+            #("2021-02-" + str(day+3) + "T10:00:00", "2021-02-" +
+            # str(day+3) + "T10:15:00", "2021-02-" + str(day+3) + "T16:20:00"),
+            ("2021-02-"+ str(day) +"T08:00:00", "2021-02-"+ str(day) +"T08:15:00", "2021-02-"+ str(day) +"T14:20:00"),
             #  ...
         ],
         )

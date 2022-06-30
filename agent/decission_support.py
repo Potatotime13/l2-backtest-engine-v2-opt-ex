@@ -130,6 +130,7 @@ class DecisionSupport:
                 market_state['L'+str(opt_level)+'-'+side_name+'Price'])
             rest = round(limit_adj % 0.02, 2) % 0.02
             if rest > 0:
+                print('rundung')
                 limit_adj += rest
             # mode aggresive
             if mode == 'agr':
@@ -427,7 +428,7 @@ class DecisionSupport:
                     mode = 'agr'
                 else:
                     # act passive -> increase limit and volume
-                    limit_adj = -tick_size
+                    limit_adj = +tick_size
                     volume_adj = tmp_vol
                     mode = 'pas'
             elif direction[0, horizon, 0]-direction[0, horizon, 1] < -self.ml_model_stats[market_id]['barrier_dir']:
